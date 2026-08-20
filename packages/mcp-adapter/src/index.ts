@@ -103,6 +103,7 @@ function optionalNumber(options: { minimum?: number; description: string }): TSc
 }
 
 function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
+	const cwd = options.cwd ?? process.cwd();
 	const sessionConfig = options.config !== undefined ? cloneMcpConfig(options.config) : undefined;
 	const programmaticConfig = sessionConfig !== undefined;
 	let state: McpExtensionState | null = null;
@@ -151,7 +152,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
 	}
 
 	const earlyConfigPath = programmaticConfig ? undefined : (options.configPath ?? getConfigPathFromArgv());
-	const earlyConfig = programmaticConfig ? cloneMcpConfig(sessionConfig) : loadMcpConfig(earlyConfigPath);
+	const earlyConfig = programmaticConfig ? cloneMcpConfig(sessionConfig) : loadMcpConfig(earlyConfigPath, cwd);
 	const earlyCache = loadMetadataCache();
 	const envRaw = process.env.MCP_DIRECT_TOOLS;
 	const envDirectToolOverride = envRaw
@@ -428,7 +429,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
 				{
 					mode: "print",
 					hasUI: false,
-					cwd: process.cwd(),
+					cwd,
 					model: undefined,
 					modelRegistry: undefined,
 					signal: undefined,
@@ -1094,6 +1095,7 @@ export function createMcpAdapter(options: McpAdapterOptions = {}) {
 		installMcpAdapter(pi, {
 			...(options.configPath !== undefined ? { configPath: options.configPath } : {}),
 			...(factoryConfig !== undefined ? { config: cloneMcpConfig(factoryConfig) } : {}),
+			...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
 		});
 	};
 }

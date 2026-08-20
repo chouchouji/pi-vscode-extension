@@ -10,16 +10,9 @@ import {
 	type SessionInfo,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import mcpAdapter from "@earendil-works/pi-mcp-adapter";
+import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
 import * as vscode from "vscode";
-import type {
-	ChatMessage,
-	FeedbackRating,
-	ModelStatus,
-	PermissionMode,
-	SessionSummary,
-	ToolMessage,
-} from "./protocol.ts";
+import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, ToolMessage } from "./protocol.ts";
 import {
 	type ApplyEditRequest,
 	type ApplyEditsRequest,
@@ -49,27 +42,6 @@ export interface PiAgentServiceOptions {
 	confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
 	confirmRenameFile: (request: RenameFileRequest) => Promise<boolean>;
 	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
-}
-
-const FEEDBACK_UPLOAD_URL = "https://pi.dev/api/feedback";
-
-interface FeedbackBundle {
-	version: 1;
-	feedbackEventId: string;
-	createdAt: string;
-	rating: FeedbackRating;
-	target: {
-		entryId: string;
-		entryIndex: number;
-		entry: SessionEntry;
-	};
-	generationContext: {
-		entries: SessionEntry[];
-	};
-	feedbackContext: {
-		lastEntryIdAtFeedback: string | undefined;
-		entryCountAtFeedback: number;
-	};
 }
 
 function createId(prefix: string): string {
@@ -265,8 +237,6 @@ export class PiAgentService {
 	private sessionManager?: SessionManager;
 	private unsubscribe?: () => void;
 	private assistantMessageId?: string;
-	private readonly chatMessageEntryIds = new Map<string, string>();
-	private readonly pendingAssistantMessageEntryIndexes = new Map<string, number>();
 	private readonly toolMessageIds = new Map<string, string>();
 	private running = false;
 	private readonly cwd: string;
@@ -307,8 +277,6 @@ export class PiAgentService {
 		const session = await this.ensureSession();
 		const sessionDir = session.sessionManager.getSessionDir();
 		this.disposeSession();
-		this.chatMessageEntryIds.clear();
-		this.pendingAssistantMessageEntryIndexes.clear();
 		this.sessionManager = SessionManager.create(this.cwd, sessionDir);
 		await this.ensureSession();
 	}
@@ -316,8 +284,6 @@ export class PiAgentService {
 	async switchSession(path: string): Promise<void> {
 		const sessionDir = this.sessionManager?.getSessionDir();
 		this.disposeSession();
-		this.chatMessageEntryIds.clear();
-		this.pendingAssistantMessageEntryIndexes.clear();
 		this.sessionManager = SessionManager.open(path, sessionDir, this.cwd);
 		await this.ensureSession();
 	}
@@ -340,23 +306,6 @@ export class PiAgentService {
 
 	getSessionMessages(): ChatMessage[] {
 		return this.sessionManager ? chatMessagesFromEntries(this.sessionManager.buildContextEntries()) : [];
-	}
-
-	async rateMessage(chatMessageId: string, rating: FeedbackRating): Promise<FeedbackRating> {
-		const session = await this.ensureSession();
-		const sessionManager = session.sessionManager;
-		const entries = sessionManager.getEntries();
-		const contextEntries = sessionManager.buildContextEntries();
-		const targetEntryId = this.resolveFeedbackTargetEntryId(chatMessageId, entries);
-		const targetEntry = entries.find((entry) => entry.id === targetEntryId);
-		if (!targetEntry || targetEntry.type !== "message" || targetEntry.message.role !== "assistant") {
-			throw new Error("Only assistant messages can be rated.");
-		}
-
-		const createdAt = new Date().toISOString();
-		const bundle = this.createFeedbackBundle(rating, targetEntry, entries, contextEntries, createdAt);
-		void this.uploadFeedbackBundle(bundle);
-		return rating;
 	}
 
 	async prompt(text: string): Promise<void> {
@@ -414,7 +363,7 @@ export class PiAgentService {
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: this.cwd,
 			agentDir,
-			extensionFactories: [mcpAdapter],
+			extensionFactories: [createMcpAdapter({ cwd: this.cwd })],
 			additionalSkillPaths: bundledSkillPaths,
 			appendSystemPrompt: this.getPermissionModeSystemPrompt(),
 		});
@@ -457,86 +406,6 @@ export class PiAgentService {
 			});
 		}
 		return result.session;
-	}
-
-	private resolveFeedbackTargetEntryId(chatMessageId: string, entries: SessionEntry[]): string {
-		this.bindAssistantMessageEntry(chatMessageId);
-
-		const mapped = this.chatMessageEntryIds.get(chatMessageId);
-		if (mapped) {
-			return mapped;
-		}
-
-		const direct = entries.find((entry) => entry.id === chatMessageId);
-		if (direct) {
-			return direct.id;
-		}
-
-		throw new Error("Could not resolve rated message in the current session.");
-	}
-
-	private bindAssistantMessageEntry(chatMessageId: string): void {
-		const sessionManager = this.sessionManager;
-		const entryIndex = this.pendingAssistantMessageEntryIndexes.get(chatMessageId);
-		if (!sessionManager || entryIndex === undefined) {
-			return;
-		}
-		const entries = sessionManager.getEntries();
-		for (const entry of entries.slice(entryIndex)) {
-			if (entry.type !== "message" || entry.message.role !== "assistant") {
-				continue;
-			}
-			this.chatMessageEntryIds.set(chatMessageId, entry.id);
-			this.pendingAssistantMessageEntryIndexes.delete(chatMessageId);
-			return;
-		}
-	}
-
-	private createFeedbackBundle(
-		rating: FeedbackRating,
-		targetEntry: SessionEntry,
-		entries: SessionEntry[],
-		contextEntries: SessionEntry[],
-		createdAt: string,
-	): FeedbackBundle {
-		const targetEntryIndex = entries.indexOf(targetEntry);
-		const targetContextEntryIndex = contextEntries.findIndex((entry) => entry.id === targetEntry.id);
-		if (targetEntryIndex < 0 || targetContextEntryIndex < 0) {
-			throw new Error("Could not resolve rated message in the current session.");
-		}
-		return {
-			version: 1,
-			feedbackEventId: createId("feedback"),
-			createdAt,
-			rating,
-			target: {
-				entryId: targetEntry.id,
-				entryIndex: targetEntryIndex,
-				entry: targetEntry,
-			},
-			generationContext: {
-				entries: contextEntries.slice(0, targetContextEntryIndex + 1),
-			},
-			feedbackContext: {
-				lastEntryIdAtFeedback: entries.at(-1)?.id,
-				entryCountAtFeedback: entries.length,
-			},
-		};
-	}
-
-	private async uploadFeedbackBundle(bundle: FeedbackBundle): Promise<void> {
-		try {
-			const response = await fetch(FEEDBACK_UPLOAD_URL, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify(bundle),
-			});
-			if (!response.ok) {
-				console.warn(`Failed to upload feedback: HTTP ${response.status}`);
-			}
-		} catch (error) {
-			console.warn("Failed to upload feedback.", error);
-		}
 	}
 
 	private getBundledSkillPaths(): string[] {
@@ -587,8 +456,6 @@ export class PiAgentService {
 		this.session?.dispose();
 		this.session = undefined;
 		this.assistantMessageId = undefined;
-		this.chatMessageEntryIds.clear();
-		this.pendingAssistantMessageEntryIndexes.clear();
 		this.toolMessageIds.clear();
 		this.running = false;
 		this.onEvent({ type: "running", running: false });
@@ -624,17 +491,12 @@ export class PiAgentService {
 				if (event.message.role === "assistant" && this.assistantMessageId) {
 					const chatMessageId = this.assistantMessageId;
 					const text = contentToText(event.message.content);
-					const entryIndex = this.sessionManager?.getEntries().length;
-					if (entryIndex !== undefined) {
-						this.pendingAssistantMessageEntryIndexes.set(chatMessageId, entryIndex);
-					}
 					this.onEvent({
 						type: "replace",
 						id: chatMessageId,
 						text,
 						working: false,
 					});
-					setTimeout(() => this.bindAssistantMessageEntry(chatMessageId), 0);
 					this.assistantMessageId = undefined;
 				}
 				break;

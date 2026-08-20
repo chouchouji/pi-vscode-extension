@@ -15,10 +15,8 @@ export interface ChatMessage {
 	text: string;
 	working?: boolean;
 	tool?: ToolMessage;
-	feedback?: FeedbackRating;
 }
 
-export type FeedbackRating = "up" | "down";
 export type ApprovalAction = "review" | "apply" | "reject";
 export type ApprovalBatchAction = "review" | "apply" | "reject";
 
@@ -58,7 +56,6 @@ export type HostToWebviewMessage =
 	| { type: "running"; running: boolean }
 	| { type: "modelStatus"; modelStatus: ModelStatus | undefined }
 	| { type: "sessions"; sessions: SessionSummary[]; activeSessionPath: string | undefined }
-	| { type: "feedbackChanged"; id: string; feedback: FeedbackRating | undefined }
 	| { type: "approvalRequested"; approval: ApprovalPrompt }
 	| { type: "approvalResolved"; id: string }
 	| { type: "prefill"; text: string };
@@ -73,7 +70,6 @@ export type WebviewToHostMessage =
 	| { type: "setApprovalMode"; approvalMode: ApprovalMode }
 	| { type: "approvalResponse"; id: string; action: ApprovalAction }
 	| { type: "approvalBatchResponse"; action: ApprovalBatchAction }
-	| { type: "rateMessage"; id: string; rating: FeedbackRating }
 	| { type: "openFile"; path: string; line?: number; character?: number };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,14 +117,6 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
 		(value.action === "review" || value.action === "apply" || value.action === "reject")
 	) {
 		return { type: "approvalBatchResponse", action: value.action };
-	}
-
-	if (
-		value.type === "rateMessage" &&
-		typeof value.id === "string" &&
-		(value.rating === "up" || value.rating === "down")
-	) {
-		return { type: "rateMessage", id: value.id, rating: value.rating };
 	}
 
 	if (value.type === "openFile" && typeof value.path === "string") {

@@ -1,3 +1,3 @@
-<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
-  <path fill="currentColor" d="M25 106V22h35c13 0 23 4 31 11 7 7 11 17 11 29s-4 22-12 29c-8 8-18 11-31 11H45v4H25Zm20-23h14c7 0 13-2 17-6 4-3 6-9 6-15s-2-12-6-15c-4-4-10-6-17-6H45v42Zm64 23V22h20v84h-20Z"/>
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M29 36h70M44 36v58M84 36v58" stroke="currentColor" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

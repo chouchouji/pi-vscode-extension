@@ -558,6 +558,7 @@ export interface McpConfig {
 export interface McpAdapterOptions {
 	config?: McpConfig;
 	configPath?: string;
+	cwd?: string;
 }
 
 // Alias for clarity

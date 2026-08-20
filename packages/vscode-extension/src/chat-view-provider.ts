@@ -4,7 +4,6 @@ import { EditApprovalController } from "./edit-approval-controller.ts";
 import { getWorkspaceCwd, PiAgentService, type PiAgentServiceEvent } from "./pi-agent-service.ts";
 import {
 	type ChatMessage,
-	type FeedbackRating,
 	type HostToWebviewMessage,
 	type ModelStatus,
 	type PermissionMode,
@@ -221,35 +220,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			case "approvalBatchResponse":
 				await this.approvalController.handleApprovalBatchResponse(message.action);
 				break;
-			case "rateMessage":
-				await this.rateMessage(message.id, message.rating);
-				break;
 			case "openFile":
 				await this.openFileReference(message.path, message.line, message.character);
 				break;
-		}
-	}
-
-	private async rateMessage(id: string, rating: FeedbackRating): Promise<void> {
-		const message = this.messages.find((candidate) => candidate.id === id);
-		if (message?.feedback === rating) {
-			return;
-		}
-
-		const service = await this.ensureService();
-		try {
-			const feedback = await service.rateMessage(id, rating);
-			this.applyFeedback(id, feedback);
-			this.post({ type: "feedbackChanged", id, feedback });
-		} catch (error) {
-			console.warn("Failed to record feedback.", error);
-		}
-	}
-
-	private applyFeedback(id: string, feedback: FeedbackRating | undefined): void {
-		const message = this.messages.find((candidate) => candidate.id === id);
-		if (message) {
-			message.feedback = feedback;
 		}
 	}
 

@@ -1,6 +1,6 @@
 {
   "name": "pi-vscode-extension",
-  "displayName": "Pi Code Agent",
+  "displayName": "Pi Code Assistant",
   "version": "0.0.1",
   "description": "AI coding assistant for VS Code powered by Pi",
   "type": "module",

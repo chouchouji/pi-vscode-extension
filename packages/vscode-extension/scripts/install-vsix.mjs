@@ -10,7 +10,7 @@ const packageJsonPath = join(packageRoot, "package.json");
 const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
 const defaultVsixPath = join(
 	repoRoot,
-	".artifacts",
+	"artifacts",
 	"vscode-extension",
 	`${packageJson.name}-${packageJson.version}.vsix`,
 );

@@ -1,0 +1,118 @@
+{
+	"name": "pi-vscode-extension",
+    "displayName": "Pi Code Agent",
+	"version": "0.0.1",
+	"description": "VS Code extension host for Pi coding agent",
+	"type": "module",
+	"private": true,
+	"main": "./dist/extension.js",
+	"types": "./dist/extension.d.ts",
+	"files": [
+		"dist",
+		"media",
+		"skills",
+		"README.md",
+		"LICENSE"
+	],
+	"engines": {
+		"vscode": "^1.96.0",
+		"node": ">=22.19.0"
+	},
+	"activationEvents": [
+		"onView:pi.chat",
+		"onCommand:pi.chat.focus",
+		"onCommand:pi.chat.new",
+		"onCommand:pi.chat.addSelection",
+		"onCommand:pi.chat.explainCurrentFile"
+	],
+	"contributes": {
+		"commands": [
+			{
+				"command": "pi.chat.focus",
+				"title": "Pi: Focus Chat"
+			},
+			{
+				"command": "pi.chat.new",
+				"title": "Pi: New Chat"
+			},
+			{
+				"command": "pi.chat.addSelection",
+				"title": "Pi: Add Selection to Chat"
+			},
+			{
+				"command": "pi.chat.explainCurrentFile",
+				"title": "Pi: Explain Current File"
+			}
+		],
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "pi",
+					"title": "Pi",
+					"icon": "media/icon.svg"
+				}
+			]
+		},
+		"views": {
+			"pi": [
+				{
+					"id": "pi.chat",
+					"name": "Chat",
+					"type": "webview"
+				}
+			]
+		},
+		"configuration": {
+			"title": "Pi",
+			"properties": {
+				"pi.agentDir": {
+					"type": "string",
+					"default": "",
+					"description": "Optional Pi agent config directory. When empty, Pi uses its default config directory."
+				},
+				"pi.permissionMode": {
+					"type": "string",
+					"default": "ask",
+					"enum": [
+						"ask",
+						"plan",
+						"code"
+					],
+					"description": "Default workspace mode for new VS Code chat sessions. Ask is read-only Q&A, plan is read-only planning, and code enables coding tools."
+				}
+			}
+		},
+		"menus": {
+			"editor/context": [
+				{
+					"command": "pi.chat.addSelection",
+					"when": "editorTextFocus",
+					"group": "navigation"
+				},
+				{
+					"command": "pi.chat.explainCurrentFile",
+					"when": "editorTextFocus",
+					"group": "navigation"
+				}
+			]
+		}
+	},
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "npm run clean && npm --prefix ../mcp-adapter run build && tsgo -p tsconfig.build.json && node scripts/bundle.mjs",
+		"package:vsix": "npm run build && node scripts/package-vsix.mjs",
+		"install:vsix": "node scripts/install-vsix.mjs",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "^0.81.1",
+		"@earendil-works/pi-mcp-adapter": "^0.81.1",
+		"typebox": "1.1.38"
+	},
+	"devDependencies": {
+		"@types/node": "24.12.4",
+		"@vscode/vsce": "3.9.2",
+		"shx": "0.4.0",
+		"typescript": "5.9.3"
+	}
+}

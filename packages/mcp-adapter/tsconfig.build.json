@@ -1,0 +1,19 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"paths": {
+			"@earendil-works/pi-coding-agent": ["../coding-agent/dist/index.d.ts"],
+			"@earendil-works/pi-coding-agent/*": ["../coding-agent/dist/*.d.ts"],
+			"@earendil-works/pi-ai": ["../ai/dist/compat.d.ts"],
+			"@earendil-works/pi-ai/*": ["../ai/dist/*.d.ts"],
+			"@earendil-works/pi-tui": ["../tui/dist/index.d.ts"],
+			"@earendil-works/pi-tui/*": ["../tui/dist/*.d.ts"]
+		}
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

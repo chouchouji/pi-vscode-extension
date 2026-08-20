@@ -12,7 +12,7 @@ const defaultVsixPath = join(
 	repoRoot,
 	".artifacts",
 	"vscode-extension",
-	`pi-vscode-extension-${packageJson.version}.vsix`,
+	`${packageJson.name}-${packageJson.version}.vsix`,
 );
 const vsixPath = process.env.PI_VSCODE_VSIX_PATH ? resolve(process.env.PI_VSCODE_VSIX_PATH) : defaultVsixPath;
 const codeCommand = process.env.PI_VSCODE_CODE_BIN ?? "code";

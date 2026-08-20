@@ -6,6 +6,7 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
+	getDefaultSessionDir,
 	type SessionEntry,
 	type SessionInfo,
 	SessionManager,
@@ -42,6 +43,12 @@ export interface PiAgentServiceOptions {
 	confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
 	confirmRenameFile: (request: RenameFileRequest) => Promise<boolean>;
 	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
+}
+
+interface ListSessionSummariesOptions {
+	cwd: string;
+	agentDir?: string;
+	activeSessionPath?: string;
 }
 
 function createId(prefix: string): string {
@@ -149,6 +156,18 @@ function sessionLabel(session: SessionInfo): string {
 
 function sessionDetail(session: SessionInfo): string {
 	return `${session.modified.toISOString()} - ${session.messageCount} messages`;
+}
+
+export async function listSessionSummaries(options: ListSessionSummariesOptions): Promise<SessionSummary[]> {
+	const cwd = resolve(options.cwd);
+	const agentDir = options.agentDir ? resolve(options.agentDir) : getAgentDir();
+	const sessions = await SessionManager.list(cwd, getDefaultSessionDir(cwd, agentDir));
+	return sessions.slice(0, 30).map((session) => ({
+		path: session.path,
+		label: sessionLabel(session),
+		detail: sessionDetail(session),
+		active: options.activeSessionPath === session.path,
+	}));
 }
 
 function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
@@ -282,22 +301,15 @@ export class PiAgentService {
 	}
 
 	async switchSession(path: string): Promise<void> {
-		const sessionDir = this.sessionManager?.getSessionDir();
+		const sessionDir = this.getSessionDir();
 		this.disposeSession();
 		this.sessionManager = SessionManager.open(path, sessionDir, this.cwd);
 		await this.ensureSession();
 	}
 
 	async listSessions(): Promise<SessionSummary[]> {
-		const session = await this.ensureSession();
 		const currentPath = this.sessionManager?.getSessionFile();
-		const sessions = await SessionManager.list(this.cwd, session.sessionManager.getSessionDir());
-		return sessions.slice(0, 30).map((session) => ({
-			path: session.path,
-			label: sessionLabel(session),
-			detail: sessionDetail(session),
-			active: currentPath === session.path,
-		}));
+		return listSessionSummaries({ cwd: this.cwd, agentDir: this.agentDir, activeSessionPath: currentPath });
 	}
 
 	getActiveSessionPath(): string | undefined {
@@ -406,6 +418,14 @@ export class PiAgentService {
 			});
 		}
 		return result.session;
+	}
+
+	private getSessionDir(): string {
+		if (this.sessionManager) {
+			return this.sessionManager.getSessionDir();
+		}
+		const agentDir = this.agentDir ? resolve(this.agentDir) : getAgentDir();
+		return getDefaultSessionDir(this.cwd, agentDir);
 	}
 
 	private getBundledSkillPaths(): string[] {

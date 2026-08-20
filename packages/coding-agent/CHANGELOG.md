@@ -4,6 +4,7 @@
 
 ### Added
 
+- Exported `getDefaultSessionDir()` for integrations that need to list sessions without creating an agent runtime.
 - Exposed `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`, and `PI_REASONING_LEVEL` to commands run by built-in and factory-created bash tools.
 
 ### Fixed

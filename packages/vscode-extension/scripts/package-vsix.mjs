@@ -12,7 +12,7 @@ const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
 const outDir = process.env.PI_VSCODE_VSIX_OUT
 	? resolve(process.env.PI_VSCODE_VSIX_OUT)
 	: join(repoRoot, ".artifacts", "vscode-extension");
-const outPath = join(outDir, `pi-vscode-extension-${packageJson.version}.vsix`);
+const outPath = join(outDir, `${packageJson.name}-${packageJson.version}.vsix`);
 const stagingRoot = await mkdtemp(join(tmpdir(), "pi-vscode-extension-vsix-"));
 
 function run(command, args, cwd) {
@@ -46,8 +46,6 @@ try {
 	const stagedPackageJson = {
 		...packageJson,
 		files: copiedEntries,
-		name: "pi-vscode-extension",
-		publisher: "earendil-works",
 	};
 	delete stagedPackageJson.scripts;
 	delete stagedPackageJson.dependencies;

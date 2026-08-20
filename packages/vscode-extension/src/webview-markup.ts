@@ -52,7 +52,7 @@ export function getWebviewBody(): string {
 				<div class="status-item">
 					<button id="approvalMode" class="select-trigger" type="button" title="Edit approval">
 						<span class="select-icon">◇</span>
-						<span id="approvalModeLabel" class="select-label">Default permissions</span>
+						<span id="approvalModeLabel" class="select-label">Default</span>
 					</button>
 				</div>
 			</div>

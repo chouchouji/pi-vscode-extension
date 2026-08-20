@@ -33,13 +33,13 @@ export function getWebviewScript(): string {
 		let approvalModeValue = "ask";
 		let openSelectKind = "";
 		const permissionModeOptions = [
-			{ value: "ask", label: "Ask", shortcut: "⌘1" },
-			{ value: "plan", label: "Plan", shortcut: "⌘2" },
-			{ value: "code", label: "Code", shortcut: "⌘3" },
+			{ value: "ask", label: "Ask", description: "Read-only answers and explanations." },
+			{ value: "plan", label: "Plan", description: "Read-only implementation plans." },
+			{ value: "code", label: "Code", description: "Read, run, and edit with approvals." },
 		];
 		const approvalModeOptions = [
-			{ value: "ask", label: "Default permissions", shortcut: "" },
-			{ value: "auto", label: "Auto permissions", shortcut: "" },
+			{ value: "ask", label: "Default", description: "Ask before applying VS Code edits." },
+			{ value: "auto", label: "Auto", description: "Apply VS Code edits without prompting." },
 		];
 
 		function appendText(parent, className, text) {
@@ -528,7 +528,7 @@ export function getWebviewScript(): string {
 		function setApprovalMode(approvalMode) {
 			approvalModeValue = approvalMode;
 			const option = approvalModeOptions.find((candidate) => candidate.value === approvalMode);
-			approvalModeLabelEl.textContent = option ? option.label : "Default permissions";
+			approvalModeLabelEl.textContent = option ? option.label : "Default";
 		}
 
 		function updateEmptyState() {
@@ -580,14 +580,17 @@ export function getWebviewScript(): string {
 				const optionLabel = document.createElement("span");
 				optionLabel.className = "select-option-label";
 				optionLabel.textContent = option.label;
-				item.appendChild(optionIcon);
-				item.appendChild(optionLabel);
-				if (option.shortcut) {
-					const shortcut = document.createElement("span");
-					shortcut.className = "select-option-shortcut";
-					shortcut.textContent = option.shortcut;
-					item.appendChild(shortcut);
+				const optionText = document.createElement("span");
+				optionText.className = "select-option-text";
+				optionText.appendChild(optionLabel);
+				if (option.description) {
+					const description = document.createElement("span");
+					description.className = "select-option-description";
+					description.textContent = option.description;
+					optionText.appendChild(description);
 				}
+				item.appendChild(optionIcon);
+				item.appendChild(optionText);
 				item.addEventListener("click", () => {
 					closeSelectMenu();
 					onSelect(option.value);

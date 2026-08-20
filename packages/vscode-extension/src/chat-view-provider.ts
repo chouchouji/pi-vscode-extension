@@ -1,7 +1,7 @@
 import { isAbsolute, resolve } from "node:path";
 import * as vscode from "vscode";
 import { EditApprovalController } from "./edit-approval-controller.ts";
-import { getWorkspaceCwd, PiAgentService, type PiAgentServiceEvent } from "./pi-agent-service.ts";
+import { getWorkspaceCwd, listSessionSummaries, PiAgentService, type PiAgentServiceEvent } from "./pi-agent-service.ts";
 import {
 	type ChatMessage,
 	type HostToWebviewMessage,
@@ -274,9 +274,17 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async refreshSessions(): Promise<void> {
-		const service = await this.ensureService();
-		this.sessions = await service.listSessions();
-		this.activeSessionPath = service.getActiveSessionPath();
+		if (this.service) {
+			this.sessions = await this.service.listSessions();
+			this.activeSessionPath = this.service.getActiveSessionPath();
+		} else {
+			this.activeSessionPath = undefined;
+			this.sessions = await listSessionSummaries({
+				cwd: getWorkspaceCwd(),
+				agentDir: this.readAgentDir(),
+				activeSessionPath: this.activeSessionPath,
+			});
+		}
 		this.post({ type: "sessions", sessions: this.sessions, activeSessionPath: this.activeSessionPath });
 	}
 

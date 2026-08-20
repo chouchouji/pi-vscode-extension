@@ -538,13 +538,22 @@ export function getWebviewStyles(): string {
 			background: var(--vscode-list-hoverBackground);
 		}
 		.select-option-label {
-			flex: 1;
 			min-width: 0;
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
 		}
-		.select-option-shortcut {
+		.select-option-text {
+			display: flex;
+			flex: 1;
+			flex-direction: column;
+			min-width: 0;
+		}
+		.select-option-description {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 			color: var(--vscode-descriptionForeground);
 			font-size: 0.9em;
 		}

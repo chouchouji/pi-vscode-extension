@@ -14,6 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("pi.chat.new", () => provider?.newChat()),
 		vscode.commands.registerCommand("pi.chat.addSelection", () => provider?.addSelection()),
 		vscode.commands.registerCommand("pi.chat.explainCurrentFile", () => provider?.explainCurrentFile()),
+		vscode.commands.registerCommand("pi.chat.history", () => provider?.toggleSessionHistory()),
 	);
 }
 

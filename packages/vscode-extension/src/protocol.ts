@@ -58,7 +58,8 @@ export type HostToWebviewMessage =
 	| { type: "sessions"; sessions: SessionSummary[]; activeSessionPath: string | undefined }
 	| { type: "approvalRequested"; approval: ApprovalPrompt }
 	| { type: "approvalResolved"; id: string }
-	| { type: "prefill"; text: string };
+	| { type: "prefill"; text: string }
+	| { type: "toggleSessionHistory" };
 
 export type WebviewToHostMessage =
 	| { type: "ready" }

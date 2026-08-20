@@ -15,14 +15,12 @@ import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
 import * as vscode from "vscode";
 import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, ToolMessage } from "./protocol.ts";
 import {
-	type ApplyEditRequest,
 	type ApplyEditsRequest,
 	createVsCodeToolDefinitions,
 	type DeleteFileRequest,
-	type RenameFileRequest,
 	type RenameSymbolRequest,
 	type WriteFileRequest,
-} from "./vscode-tools.ts";
+} from "./tools/index.ts";
 
 export type PiAgentServiceEvent =
 	| { type: "append"; message: ChatMessage }
@@ -37,11 +35,9 @@ export interface PiAgentServiceOptions {
 	extensionPath: string;
 	permissionMode: PermissionMode;
 	onEvent: (event: PiAgentServiceEvent) => void;
-	confirmApplyEdit: (request: ApplyEditRequest) => Promise<boolean>;
 	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
 	confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
 	confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
-	confirmRenameFile: (request: RenameFileRequest) => Promise<boolean>;
 	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
 }
 
@@ -172,6 +168,21 @@ export async function listSessionSummaries(options: ListSessionSummariesOptions)
 
 function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 	const messages: ChatMessage[] = [];
+	const toolArgsById = new Map<string, string>();
+	for (const entry of entries) {
+		if (entry.type !== "message" || entry.message.role !== "assistant") {
+			continue;
+		}
+		for (const part of entry.message.content) {
+			if (part.type === "toolCall") {
+				const args = formatUnknown(part.arguments);
+				if (args) {
+					toolArgsById.set(part.id, args);
+				}
+			}
+		}
+	}
+
 	for (const entry of entries) {
 		if (entry.type !== "message") {
 			continue;
@@ -202,6 +213,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 					tool: {
 						name: message.toolName,
 						status: message.isError ? "failed" : "completed",
+						args: toolArgsById.get(message.toolCallId),
 						output,
 					},
 				});
@@ -257,17 +269,16 @@ export class PiAgentService {
 	private unsubscribe?: () => void;
 	private assistantMessageId?: string;
 	private readonly toolMessageIds = new Map<string, string>();
+	private readonly toolArgs = new Map<string, string>();
 	private running = false;
 	private readonly cwd: string;
 	private readonly agentDir?: string;
 	private readonly extensionPath: string;
 	private permissionMode: PermissionMode;
 	private readonly onEvent: (event: PiAgentServiceEvent) => void;
-	private readonly confirmApplyEdit: (request: ApplyEditRequest) => Promise<boolean>;
 	private readonly confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
 	private readonly confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
 	private readonly confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
-	private readonly confirmRenameFile: (request: RenameFileRequest) => Promise<boolean>;
 	private readonly confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
 
 	constructor(options: PiAgentServiceOptions) {
@@ -276,11 +287,9 @@ export class PiAgentService {
 		this.extensionPath = options.extensionPath;
 		this.permissionMode = options.permissionMode;
 		this.onEvent = options.onEvent;
-		this.confirmApplyEdit = options.confirmApplyEdit;
 		this.confirmApplyEdits = options.confirmApplyEdits;
 		this.confirmWriteFile = options.confirmWriteFile;
 		this.confirmDeleteFile = options.confirmDeleteFile;
-		this.confirmRenameFile = options.confirmRenameFile;
 		this.confirmRenameSymbol = options.confirmRenameSymbol;
 	}
 
@@ -361,11 +370,9 @@ export class PiAgentService {
 		const customTools = createVsCodeToolDefinitions(
 			{
 				cwd: this.cwd,
-				confirmApplyEdit: this.confirmApplyEdit,
 				confirmApplyEdits: this.confirmApplyEdits,
 				confirmWriteFile: this.confirmWriteFile,
 				confirmDeleteFile: this.confirmDeleteFile,
-				confirmRenameFile: this.confirmRenameFile,
 				confirmRenameSymbol: this.confirmRenameSymbol,
 			},
 			this.permissionMode,
@@ -477,6 +484,7 @@ export class PiAgentService {
 		this.session = undefined;
 		this.assistantMessageId = undefined;
 		this.toolMessageIds.clear();
+		this.toolArgs.clear();
 		this.running = false;
 		this.onEvent({ type: "running", running: false });
 		this.emitModelStatus();
@@ -523,7 +531,11 @@ export class PiAgentService {
 			}
 			case "tool_execution_start": {
 				const id = createId("tool");
+				const args = formatUnknown(event.args);
 				this.toolMessageIds.set(event.toolCallId, id);
+				if (args) {
+					this.toolArgs.set(event.toolCallId, args);
+				}
 				this.onEvent({
 					type: "append",
 					message: {
@@ -534,7 +546,7 @@ export class PiAgentService {
 						tool: {
 							name: event.toolName,
 							status: "running",
-							args: formatUnknown(event.args),
+							args,
 						},
 					},
 				});
@@ -545,6 +557,10 @@ export class PiAgentService {
 				if (!id) {
 					break;
 				}
+				const args = formatUnknown(event.args) ?? this.toolArgs.get(event.toolCallId);
+				if (args) {
+					this.toolArgs.set(event.toolCallId, args);
+				}
 				this.onEvent({
 					type: "replace",
 					id,
@@ -553,7 +569,7 @@ export class PiAgentService {
 					tool: {
 						name: event.toolName,
 						status: "running",
-						args: formatUnknown(event.args),
+						args,
 						output: formatToolOutput(event.partialResult, false),
 						title: formatToolTitle(event.partialResult),
 					},
@@ -563,6 +579,8 @@ export class PiAgentService {
 			case "tool_execution_end": {
 				const id = this.toolMessageIds.get(event.toolCallId);
 				this.toolMessageIds.delete(event.toolCallId);
+				const args = this.toolArgs.get(event.toolCallId);
+				this.toolArgs.delete(event.toolCallId);
 				const output = formatToolResultText(event);
 				const message: ChatMessage = {
 					id: id ?? createId("tool"),
@@ -572,6 +590,7 @@ export class PiAgentService {
 					tool: {
 						name: event.toolName,
 						status: event.isError ? "failed" : "completed",
+						args,
 						output,
 						title: formatToolTitle(event.result),
 					},

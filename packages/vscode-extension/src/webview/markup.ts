@@ -1,12 +1,6 @@
 export function getWebviewBody(): string {
 	return `	<div id="app">
 		<div class="content">
-			<div class="session-control">
-				<button id="sessionHistory" class="session-history-button" type="button" title="Session history">
-					<span id="currentSessionLabel" class="current-session-label">Current session</span>
-					<span class="history-icon">↺</span>
-				</button>
-			</div>
 			<div id="sessionPanel" class="session-panel" hidden>
 				<div class="session-panel-header">
 					<span>Chat history</span>
@@ -37,7 +31,7 @@ export function getWebviewBody(): string {
 						<button id="new" class="tool-button" type="button" title="New chat">+</button>
 						<button id="mode" class="select-trigger" type="button" title="Workspace access">
 							<span class="select-icon">◇</span>
-							<span id="modeLabel" class="select-label">Ask</span>
+							<span id="modeLabel" class="select-label">Code</span>
 						</button>
 						<div id="modelStatus" class="model-status" title="No model">Models</div>
 					</div>

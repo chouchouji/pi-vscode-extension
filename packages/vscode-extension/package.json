@@ -10,7 +10,6 @@
     "email": "1305974212@qq.com"
   },
   "publisher": "chouchouji",
-  "private": true,
   "main": "./dist/extension.js",
   "types": "./dist/extension.d.ts",
   "files": [
@@ -29,7 +28,8 @@
     "onCommand:pi.chat.focus",
     "onCommand:pi.chat.new",
     "onCommand:pi.chat.addSelection",
-    "onCommand:pi.chat.explainCurrentFile"
+    "onCommand:pi.chat.explainCurrentFile",
+    "onCommand:pi.chat.history"
   ],
   "contributes": {
     "commands": [
@@ -48,6 +48,11 @@
       {
         "command": "pi.chat.explainCurrentFile",
         "title": "Pi: Explain Current File"
+      },
+      {
+        "command": "pi.chat.history",
+        "title": "Pi: Chat History",
+        "icon": "$(history)"
       }
     ],
     "viewsContainers": {
@@ -78,7 +83,7 @@
         },
         "pi.permissionMode": {
           "type": "string",
-          "default": "ask",
+          "default": "code",
           "enum": [
             "ask",
             "plan",
@@ -94,6 +99,13 @@
       }
     },
     "menus": {
+      "view/title": [
+        {
+          "command": "pi.chat.history",
+          "when": "view == pi.chat",
+          "group": "navigation"
+        }
+      ],
       "editor/context": [
         {
           "command": "pi.chat.addSelection",
@@ -118,6 +130,7 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^0.81.1",
     "@earendil-works/pi-mcp-adapter": "^0.81.1",
+    "shiki": "3.12.2",
     "typebox": "1.1.38"
   },
   "devDependencies": {

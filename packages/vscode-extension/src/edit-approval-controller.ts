@@ -8,14 +8,7 @@ import type {
 	ApprovalPrompt,
 	HostToWebviewMessage,
 } from "./protocol.ts";
-import type {
-	ApplyEditRequest,
-	ApplyEditsRequest,
-	DeleteFileRequest,
-	RenameFileRequest,
-	RenameSymbolRequest,
-	WriteFileRequest,
-} from "./vscode-tools.ts";
+import type { ApplyEditsRequest, DeleteFileRequest, RenameSymbolRequest, WriteFileRequest } from "./tools/index.ts";
 
 interface PendingApproval {
 	resolve: (approved: boolean) => void;
@@ -55,28 +48,6 @@ export class EditApprovalController {
 		if (approvalMode === "auto") {
 			this.resolvePendingApprovals(true);
 		}
-	}
-
-	async confirmApplyEdit(request: ApplyEditRequest): Promise<boolean> {
-		if (this._approvalMode === "auto") {
-			return true;
-		}
-
-		const [{ originalUri, tempUri }] = await this.createReviewFiles([
-			{ filePath: request.filePath, proposedText: request.proposedText },
-		]);
-		const relativePath = vscode.workspace.asRelativePath(originalUri, false);
-
-		return this.requestApproval(
-			{
-				text: `Pi wants to edit ${relativePath}.`,
-				detail: "Review opens a diff. Apply writes and saves the file.",
-			},
-			async () => {
-				this.reveal();
-				await vscode.commands.executeCommand("vscode.diff", originalUri, tempUri, "Pi proposed edit");
-			},
-		);
 	}
 
 	async confirmApplyEdits(request: ApplyEditsRequest): Promise<boolean> {
@@ -152,30 +123,6 @@ export class EditApprovalController {
 			async () => {
 				this.reveal();
 				await vscode.window.showTextDocument(targetUri, { preview: true });
-			},
-		);
-	}
-
-	async confirmRenameFile(request: RenameFileRequest): Promise<boolean> {
-		if (this._approvalMode === "auto") {
-			return true;
-		}
-
-		const oldUri = vscode.Uri.file(request.oldPath);
-		const newUri = vscode.Uri.file(request.newPath);
-		const oldRelativePath = vscode.workspace.asRelativePath(oldUri, false);
-		const newRelativePath = vscode.workspace.asRelativePath(newUri, false);
-
-		return this.requestApproval(
-			{
-				text: `Pi wants to rename ${oldRelativePath} to ${newRelativePath}.`,
-				detail: request.overwrite
-					? "Review opens the source file. Apply renames it and overwrites the target file."
-					: "Review opens the source file. Apply renames it.",
-			},
-			async () => {
-				this.reveal();
-				await vscode.window.showTextDocument(oldUri, { preview: true });
 			},
 		);
 	}

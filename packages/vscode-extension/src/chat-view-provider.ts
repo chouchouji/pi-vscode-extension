@@ -11,7 +11,7 @@ import {
 	type SessionSummary,
 	type WebviewToHostMessage,
 } from "./protocol.ts";
-import { getWebviewHtml } from "./webview.ts";
+import { getWebviewHtml } from "./webview/index.ts";
 
 export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	private view?: vscode.WebviewView;
@@ -43,7 +43,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 			localResourceRoots: [this.extensionUri],
 		};
-		webviewView.webview.html = getWebviewHtml();
+		webviewView.webview.html = getWebviewHtml(webviewView.webview, this.extensionUri);
 		webviewView.webview.onDidReceiveMessage((message) => {
 			const parsed = parseWebviewMessage(message);
 			if (parsed) {
@@ -75,6 +75,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	prefill(text: string): void {
 		this.reveal();
 		this.post({ type: "prefill", text });
+	}
+
+	toggleSessionHistory(): void {
+		if (!this.view) {
+			this.reveal();
+			return;
+		}
+		this.post({ type: "toggleSessionHistory" });
 	}
 
 	async explainCurrentFile(): Promise<void> {
@@ -121,8 +129,8 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private readPermissionMode(): PermissionMode {
-		const configured = vscode.workspace.getConfiguration("pi").get<string>("permissionMode", "ask");
-		return configured === "plan" || configured === "code" ? configured : "ask";
+		const configured = vscode.workspace.getConfiguration("pi").get<string>("permissionMode", "code");
+		return configured === "ask" || configured === "plan" || configured === "code" ? configured : "code";
 	}
 
 	private readAgentDir(): string | undefined {
@@ -141,11 +149,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			extensionPath: this.extensionPath,
 			permissionMode: this.permissionMode,
 			onEvent: (event) => this.handleServiceEvent(event),
-			confirmApplyEdit: (request) => this.approvalController.confirmApplyEdit(request),
 			confirmApplyEdits: (request) => this.approvalController.confirmApplyEdits(request),
 			confirmWriteFile: (request) => this.approvalController.confirmWriteFile(request),
 			confirmDeleteFile: (request) => this.approvalController.confirmDeleteFile(request),
-			confirmRenameFile: (request) => this.approvalController.confirmRenameFile(request),
 			confirmRenameSymbol: (request) => this.approvalController.confirmRenameSymbol(request),
 		});
 		this.service = service;

@@ -8,6 +8,8 @@ const packageRoot = resolve(dirname(scriptPath), "..");
 const repoRoot = resolve(packageRoot, "..", "..");
 const distDir = join(packageRoot, "dist");
 const entryPoint = join(distDir, "extension.js");
+const highlighterEntryPoint = join(packageRoot, "src", "webview", "highlighter.ts");
+const highlighterPath = join(distDir, "webview-highlighter.js");
 const bundledPath = join(distDir, "extension.bundle.js");
 
 async function removeRuntimeJs(dir) {
@@ -84,6 +86,17 @@ await build({
 
 await removeRuntimeJs(distDir);
 await rename(bundledPath, entryPoint);
+
+await build({
+	entryPoints: [highlighterEntryPoint],
+	bundle: true,
+	platform: "browser",
+	format: "iife",
+	target: "es2022",
+	outfile: highlighterPath,
+	minify: true,
+	legalComments: "none",
+});
 
 await copyMatchingFiles(
 	join(repoRoot, "packages", "coding-agent", "dist", "modes", "interactive", "theme"),

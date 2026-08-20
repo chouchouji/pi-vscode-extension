@@ -592,6 +592,9 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		}
 
 		function appendCodeBlock(parent, code, language) {
+			if (!code.trim()) {
+				return;
+			}
 			if (language) {
 				const header = document.createElement("div");
 				header.className = "code-header";

@@ -24,6 +24,10 @@ export interface ApprovalPrompt {
 	id: string;
 	text: string;
 	detail?: string;
+	action?: string;
+	target?: string;
+	scope?: string;
+	risk?: "normal" | "warning" | "danger";
 }
 
 export interface ModelStatus {

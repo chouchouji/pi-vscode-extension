@@ -45,6 +45,16 @@ export function createApplyEditsToolDefinition(options: VsCodeToolOptions): Tool
 				return errorResult("User rejected the edits.", "apply edits");
 			}
 
+			const changedFiles = planned
+				.filter((plan) => plan.document.getText() !== plan.currentText)
+				.map((plan) => toWorkspacePath(options.cwd, plan.uri.fsPath));
+			if (changedFiles.length > 0) {
+				return errorResult(
+					`File content changed while waiting for approval: ${changedFiles.join(", ")}. Re-read the file and propose the edits again.`,
+					"apply edits",
+				);
+			}
+
 			const edit = new vscode.WorkspaceEdit();
 			for (const plan of planned) {
 				for (const replacement of plan.replacements) {

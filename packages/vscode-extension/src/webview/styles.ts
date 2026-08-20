@@ -488,12 +488,55 @@ export function getWebviewStyles(): string {
 		}
 		.approval {
 			margin-top: 8px;
-			padding: 8px;
+			padding: 10px;
 			border-left: 2px solid var(--vscode-textLink-foreground);
 			background: var(--vscode-editor-background);
 		}
-		.approval-text {
+		.approval-warning {
+			border-left-color: var(--vscode-editorWarning-foreground);
+		}
+		.approval-danger {
+			border-left-color: var(--vscode-errorForeground);
+		}
+		.approval-reviewed {
+			background: var(--vscode-sideBar-background);
+		}
+		.approval-header {
+			display: flex;
+			align-items: flex-start;
+			justify-content: space-between;
+			gap: 8px;
 			margin-bottom: 4px;
+		}
+		.approval-action {
+			font-weight: 600;
+			overflow-wrap: anywhere;
+		}
+		.approval-status {
+			flex: 0 0 auto;
+			padding: 1px 6px;
+			border: 1px solid var(--vscode-sideBar-border);
+			color: var(--vscode-descriptionForeground);
+			font-size: 0.85em;
+		}
+		.approval-danger .approval-status {
+			color: var(--vscode-errorForeground);
+			border-color: var(--vscode-errorForeground);
+		}
+		.approval-reviewed .approval-status {
+			color: var(--vscode-textLink-foreground);
+			border-color: var(--vscode-textLink-foreground);
+		}
+		.approval-target {
+			margin-bottom: 3px;
+			font-family: var(--vscode-editor-font-family);
+			font-size: 0.95em;
+			overflow-wrap: anywhere;
+		}
+		.approval-scope {
+			margin-bottom: 6px;
+			color: var(--vscode-descriptionForeground);
+			overflow-wrap: anywhere;
 		}
 		.approval-detail {
 			margin-bottom: 8px;
@@ -514,6 +557,10 @@ export function getWebviewStyles(): string {
 		}
 		.secondary:hover {
 			background: var(--vscode-button-secondaryHoverBackground);
+		}
+		button:disabled {
+			opacity: 0.55;
+			cursor: default;
 		}
 		.composer {
 			padding: 0 12px 8px;

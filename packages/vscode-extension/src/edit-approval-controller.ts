@@ -8,7 +8,13 @@ import type {
 	ApprovalPrompt,
 	HostToWebviewMessage,
 } from "./protocol.ts";
-import type { ApplyEditsRequest, DeleteFileRequest, RenameSymbolRequest, WriteFileRequest } from "./tools/index.ts";
+import type {
+	ApplyEditsRequest,
+	DeleteDirectoryRequest,
+	DeleteFileRequest,
+	RenameSymbolRequest,
+	WriteFileRequest,
+} from "./tools/index.ts";
 
 interface PendingApproval {
 	resolve: (approved: boolean) => void;
@@ -63,6 +69,10 @@ export class EditApprovalController {
 			{
 				text: `Pi wants to edit ${fileCount} files.`,
 				detail: `Review opens ${fileCount} diffs. Apply writes and saves all files: ${relativePaths.join(", ")}`,
+				action: "Edit",
+				target: fileCount === 1 ? relativePaths[0] : `${fileCount} files`,
+				scope: relativePaths.join(", "),
+				risk: "normal",
 			},
 			async () => {
 				this.reveal();
@@ -95,6 +105,10 @@ export class EditApprovalController {
 				detail: request.overwrite
 					? "Review opens a diff. Apply overwrites and saves the file."
 					: "Review opens the proposed file. Apply creates it.",
+				action: request.overwrite ? "Overwrite file" : "Create file",
+				target: relativePath,
+				scope: request.overwrite ? "Full file replacement" : "New file",
+				risk: request.overwrite ? "danger" : "normal",
 			},
 			async () => {
 				this.reveal();
@@ -119,10 +133,53 @@ export class EditApprovalController {
 			{
 				text: `Pi wants to delete ${relativePath}.`,
 				detail: "Review opens the file. Apply moves it to the trash.",
+				action: "Delete file",
+				target: relativePath,
+				scope: "Move to Trash",
+				risk: "danger",
 			},
 			async () => {
 				this.reveal();
 				await vscode.window.showTextDocument(targetUri, { preview: true });
+			},
+		);
+	}
+
+	async confirmDeleteDirectory(request: DeleteDirectoryRequest): Promise<boolean> {
+		if (this._approvalMode === "auto") {
+			return true;
+		}
+
+		const targetUri = vscode.Uri.file(request.directoryPath);
+		const relativePath = vscode.workspace.asRelativePath(targetUri, false);
+		const entryText = request.truncated ? `at least ${request.entryCount} entries` : `${request.entryCount} entries`;
+		const reviewContent = [
+			`Directory: ${relativePath}`,
+			`Contents: ${entryText}`,
+			"",
+			request.samplePaths.length > 0 ? "Entries:" : "Entries: (empty directory)",
+			...request.samplePaths.map((path) => `- ${path}`),
+			request.truncated ? "" : undefined,
+			request.truncated
+				? `Only the first ${request.samplePaths.length} entries are shown. Apply moves the whole directory tree to the trash.`
+				: undefined,
+		]
+			.filter((line): line is string => line !== undefined)
+			.join("\n");
+		const reviewUri = await this.createReviewFile(request.directoryPath, reviewContent);
+
+		return this.requestApproval(
+			{
+				text: `Pi wants to delete directory ${relativePath}.`,
+				detail: `Review opens a directory summary. Apply moves ${entryText} to the trash.`,
+				action: "Delete directory",
+				target: relativePath,
+				scope: entryText,
+				risk: "danger",
+			},
+			async () => {
+				this.reveal();
+				await vscode.window.showTextDocument(reviewUri, { preview: true });
 			},
 		);
 	}
@@ -141,6 +198,10 @@ export class EditApprovalController {
 			{
 				text: `Pi wants to rename a symbol at ${relativePath}:${request.line}:${request.character} to ${request.newName}.`,
 				detail: `Review opens ${fileCount} diffs. Apply writes and saves all affected files.`,
+				action: "Rename symbol",
+				target: `${relativePath}:${request.line}:${request.character}`,
+				scope: `${fileCount} files`,
+				risk: "warning",
 			},
 			async () => {
 				this.reveal();

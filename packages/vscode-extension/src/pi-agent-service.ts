@@ -17,6 +17,7 @@ import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, ToolMess
 import {
 	type ApplyEditsRequest,
 	createVsCodeToolDefinitions,
+	type DeleteDirectoryRequest,
 	type DeleteFileRequest,
 	type RenameSymbolRequest,
 	type WriteFileRequest,
@@ -38,6 +39,7 @@ export interface PiAgentServiceOptions {
 	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
 	confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
 	confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
+	confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<boolean>;
 	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
 }
 
@@ -279,6 +281,7 @@ export class PiAgentService {
 	private readonly confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
 	private readonly confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
 	private readonly confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
+	private readonly confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<boolean>;
 	private readonly confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
 
 	constructor(options: PiAgentServiceOptions) {
@@ -290,6 +293,7 @@ export class PiAgentService {
 		this.confirmApplyEdits = options.confirmApplyEdits;
 		this.confirmWriteFile = options.confirmWriteFile;
 		this.confirmDeleteFile = options.confirmDeleteFile;
+		this.confirmDeleteDirectory = options.confirmDeleteDirectory;
 		this.confirmRenameSymbol = options.confirmRenameSymbol;
 	}
 
@@ -373,6 +377,7 @@ export class PiAgentService {
 				confirmApplyEdits: this.confirmApplyEdits,
 				confirmWriteFile: this.confirmWriteFile,
 				confirmDeleteFile: this.confirmDeleteFile,
+				confirmDeleteDirectory: this.confirmDeleteDirectory,
 				confirmRenameSymbol: this.confirmRenameSymbol,
 			},
 			this.permissionMode,

@@ -7,6 +7,26 @@ import { uriExists } from "./file-utils.ts";
 import { errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
+interface ExistingFileText {
+	exists: boolean;
+	text: string;
+}
+
+async function readExistingFileText(uri: vscode.Uri): Promise<ExistingFileText | string> {
+	try {
+		return {
+			exists: true,
+			text: new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)),
+		};
+	} catch {
+		const exists = await uriExists(uri);
+		if (exists) {
+			return "Path exists but is not a readable file.";
+		}
+		return { exists: false, text: "" };
+	}
+}
+
 export function createWriteFileToolDefinition(options: VsCodeToolOptions): ToolDefinition {
 	return defineTool({
 		name: "vscode_write_file",
@@ -30,9 +50,13 @@ export function createWriteFileToolDefinition(options: VsCodeToolOptions): ToolD
 		}),
 		execute: async (_toolCallId, params) => {
 			const uri = resolveFileUri(options.cwd, params.path);
-			const exists = await uriExists(uri);
+			const initial = await readExistingFileText(uri);
+			if (typeof initial === "string") {
+				return errorResult(initial, "write file");
+			}
+			const exists = initial.exists;
 			const overwrite = params.overwrite === true;
-			const existingText = exists ? new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)) : "";
+			const existingText = initial.text;
 			const canFillEmptyFile = exists && existingText.length === 0;
 			if (exists && !overwrite && !canFillEmptyFile) {
 				return errorResult(
@@ -48,6 +72,17 @@ export function createWriteFileToolDefinition(options: VsCodeToolOptions): ToolD
 			});
 			if (!approved) {
 				return errorResult("User rejected the file write.", "write file");
+			}
+
+			const latest = await readExistingFileText(uri);
+			if (typeof latest === "string") {
+				return errorResult(latest, "write file");
+			}
+			if (latest.exists !== exists || latest.text !== existingText) {
+				return errorResult(
+					`File content changed while waiting for approval: ${toWorkspacePath(options.cwd, uri.fsPath)}. Re-read the file and propose the write again.`,
+					"write file",
+				);
 			}
 
 			await vscode.workspace.fs.createDirectory(vscode.Uri.file(dirname(uri.fsPath)));

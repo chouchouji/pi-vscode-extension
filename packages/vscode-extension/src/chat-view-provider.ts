@@ -152,6 +152,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			confirmApplyEdits: (request) => this.approvalController.confirmApplyEdits(request),
 			confirmWriteFile: (request) => this.approvalController.confirmWriteFile(request),
 			confirmDeleteFile: (request) => this.approvalController.confirmDeleteFile(request),
+			confirmDeleteDirectory: (request) => this.approvalController.confirmDeleteDirectory(request),
 			confirmRenameSymbol: (request) => this.approvalController.confirmRenameSymbol(request),
 		});
 		this.service = service;

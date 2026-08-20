@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { PermissionMode } from "../protocol.ts";
 import { createApplyEditsToolDefinition } from "./apply-edits.ts";
 import { createDefinitionToolDefinition } from "./definition.ts";
+import { createDeleteDirectoryToolDefinition } from "./delete-directory.ts";
 import { createDeleteFileToolDefinition } from "./delete-file.ts";
 import { createDiagnosticsToolDefinition } from "./diagnostics.ts";
 import { createOpenEditorsToolDefinition } from "./open-editors.ts";
@@ -15,6 +16,7 @@ import { createWriteFileToolDefinition } from "./write-file.ts";
 export type {
 	ApplyEditReviewFile,
 	ApplyEditsRequest,
+	DeleteDirectoryRequest,
 	DeleteFileRequest,
 	RenameSymbolRequest,
 	VsCodeToolOptions,
@@ -36,6 +38,7 @@ export function createVsCodeToolDefinitions(options: VsCodeToolOptions, mode: Pe
 			createApplyEditsToolDefinition(options),
 			createWriteFileToolDefinition(options),
 			createDeleteFileToolDefinition(options),
+			createDeleteDirectoryToolDefinition(options),
 			createRenameSymbolToolDefinition(options),
 		);
 	}

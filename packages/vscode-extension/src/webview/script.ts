@@ -26,6 +26,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const messageEls = new Map();
 		const messageData = new Map();
 		const approvalEls = new Map();
+		const approvalData = new Map();
+		const reviewedApprovalIds = new Set();
 		let sessionsState = [];
 		let running = false;
 		let activeSessionPath = "";
@@ -863,8 +865,15 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function shouldRenderResultLine(tool, output) {
 			return (
-				["write", "edit", "vscode_apply_edits", "vscode_write_file"].includes(tool.name) &&
-				/^Successfully\\b/.test(output.trim())
+				[
+					"write",
+					"edit",
+					"vscode_apply_edits",
+					"vscode_write_file",
+					"vscode_delete_file",
+					"vscode_delete_directory",
+					"vscode_rename_symbol",
+				].includes(tool.name) && /^(Successfully|Moved|Renamed)\\b/.test(output.trim())
 			);
 		}
 
@@ -954,29 +963,78 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			updateEmptyState();
 		}
 
-		function approvalButton(id, action, label, className) {
+		function approvalRisk(approval) {
+			return approval && (approval.risk === "danger" || approval.risk === "warning") ? approval.risk : "normal";
+		}
+
+		function isDangerApproval(approval) {
+			return approvalRisk(approval) === "danger";
+		}
+
+		function markApprovalReviewed(id) {
+			reviewedApprovalIds.add(id);
+			const approval = approvalData.get(id);
+			if (approval) {
+				renderApproval(approval);
+			}
+			updateApprovalBatch();
+		}
+
+		function approvalButton(approval, action, label, className) {
+			const id = approval.id;
 			const button = document.createElement("button");
 			button.type = "button";
 			button.className = className;
 			button.textContent = label;
-			button.addEventListener("click", () => vscode.postMessage({ type: "approvalResponse", id, action }));
+			if (action === "apply" && isDangerApproval(approval) && !reviewedApprovalIds.has(id)) {
+				button.disabled = true;
+				button.title = "Review this change before applying it.";
+			}
+			button.addEventListener("click", () => {
+				if (action === "review") {
+					markApprovalReviewed(id);
+				}
+				vscode.postMessage({ type: "approvalResponse", id, action });
+			});
 			return button;
 		}
 
 		function renderApproval(approval) {
+			approvalData.set(approval.id, approval);
 			let el = approvalEls.get(approval.id);
 			if (!el) {
 				el = document.createElement("div");
-				el.className = "approval";
 				approvalsEl.appendChild(el);
 				approvalEls.set(approval.id, el);
 			}
 
+			const reviewed = reviewedApprovalIds.has(approval.id);
+			const risk = approvalRisk(approval);
+			el.className = ["approval", "approval-" + risk, reviewed ? "approval-reviewed" : ""].filter(Boolean).join(" ");
 			el.textContent = "";
-			const text = document.createElement("div");
-			text.className = "approval-text";
-			text.textContent = approval.text;
-			el.appendChild(text);
+			const header = document.createElement("div");
+			header.className = "approval-header";
+			const action = document.createElement("div");
+			action.className = "approval-action";
+			action.textContent = approval.action || approval.text;
+			header.appendChild(action);
+			const status = document.createElement("div");
+			status.className = "approval-status";
+			status.textContent = reviewed ? "Reviewed" : isDangerApproval(approval) ? "Review required" : "Pending";
+			header.appendChild(status);
+			el.appendChild(header);
+			if (approval.target) {
+				const target = document.createElement("div");
+				target.className = "approval-target";
+				target.textContent = approval.target;
+				el.appendChild(target);
+			}
+			if (approval.scope) {
+				const scope = document.createElement("div");
+				scope.className = "approval-scope";
+				scope.textContent = approval.scope;
+				el.appendChild(scope);
+			}
 			if (approval.detail) {
 				const detail = document.createElement("div");
 				detail.className = "approval-detail";
@@ -985,9 +1043,9 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 			const actions = document.createElement("div");
 			actions.className = "approval-actions";
-			actions.appendChild(approvalButton(approval.id, "review", "Review", "secondary"));
-			actions.appendChild(approvalButton(approval.id, "apply", "Apply", "primary"));
-			actions.appendChild(approvalButton(approval.id, "reject", "Reject", "secondary"));
+			actions.appendChild(approvalButton(approval, "review", reviewed ? "Review again" : "Review", "secondary"));
+			actions.appendChild(approvalButton(approval, "apply", "Apply", "primary"));
+			actions.appendChild(approvalButton(approval, "reject", "Reject", "secondary"));
 			el.appendChild(actions);
 			updateApprovalBatch();
 		}
@@ -997,11 +1055,16 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (!el) return;
 			el.remove();
 			approvalEls.delete(id);
+			approvalData.delete(id);
+			reviewedApprovalIds.delete(id);
 			updateApprovalBatch();
 		}
 
 		function updateApprovalBatch() {
 			approvalBatchEl.hidden = approvalEls.size <= 1;
+			const hasDanger = Array.from(approvalData.values()).some((approval) => isDangerApproval(approval));
+			applyAllEl.disabled = hasDanger;
+			applyAllEl.title = hasDanger ? "Apply all is disabled while delete or overwrite approvals are pending." : "";
 		}
 
 		function setRunning(value) {
@@ -1162,6 +1225,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			messageEls.clear();
 			messageData.clear();
 			approvalEls.clear();
+			approvalData.clear();
+			const activeApprovalIds = new Set(state.approvals.map((approval) => approval.id));
+			for (const id of reviewedApprovalIds) {
+				if (!activeApprovalIds.has(id)) {
+					reviewedApprovalIds.delete(id);
+				}
+			}
 			for (const message of state.messages) renderMessage(message);
 			for (const approval of state.approvals) renderApproval(approval);
 			updateApprovalBatch();
@@ -1183,7 +1253,15 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		sendEl.addEventListener("click", send);
 		stopEl.addEventListener("click", () => vscode.postMessage({ type: "stop" }));
 		newEl.addEventListener("click", () => vscode.postMessage({ type: "new" }));
-		reviewAllEl.addEventListener("click", () => vscode.postMessage({ type: "approvalBatchResponse", action: "review" }));
+		reviewAllEl.addEventListener("click", () => {
+			for (const id of approvalData.keys()) {
+				reviewedApprovalIds.add(id);
+			}
+			for (const approval of approvalData.values()) {
+				renderApproval(approval);
+			}
+			vscode.postMessage({ type: "approvalBatchResponse", action: "review" });
+		});
 		applyAllEl.addEventListener("click", () => vscode.postMessage({ type: "approvalBatchResponse", action: "apply" }));
 		rejectAllEl.addEventListener("click", () => vscode.postMessage({ type: "approvalBatchResponse", action: "reject" }));
 		modeEl.addEventListener("click", () =>

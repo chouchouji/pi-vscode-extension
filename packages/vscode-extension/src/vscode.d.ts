@@ -45,6 +45,21 @@ declare module "vscode" {
 		readonly Hint: 3;
 	};
 
+	export type FileType = 0 | 1 | 2 | 64;
+	export const FileType: {
+		readonly Unknown: 0;
+		readonly File: 1;
+		readonly Directory: 2;
+		readonly SymbolicLink: 64;
+	};
+
+	export interface FileStat {
+		readonly type: FileType;
+		readonly ctime: number;
+		readonly mtime: number;
+		readonly size: number;
+	}
+
 	export interface TextLine {
 		readonly text: string;
 	}
@@ -160,7 +175,8 @@ declare module "vscode" {
 		export function getConfiguration(section?: string): Configuration;
 		export const fs: {
 			readFile(uri: Uri): Thenable<Uint8Array>;
-			stat(uri: Uri): Thenable<unknown>;
+			stat(uri: Uri): Thenable<FileStat>;
+			readDirectory(uri: Uri): Thenable<[string, FileType][]>;
 			createDirectory(uri: Uri): Thenable<void>;
 			writeFile(uri: Uri, content: Uint8Array): Thenable<void>;
 			delete(uri: Uri, options?: { recursive?: boolean; useTrash?: boolean }): Thenable<void>;

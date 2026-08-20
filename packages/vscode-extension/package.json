@@ -2,7 +2,7 @@
   "name": "pi-vscode-extension",
   "displayName": "Pi Code Agent",
   "version": "0.0.1",
-  "description": "VS Code extension host for Pi coding agent",
+  "description": "AI coding assistant for VS Code powered by Pi",
   "type": "module",
   "license": "MIT",
   "author": {
@@ -10,6 +10,33 @@
     "email": "1305974212@qq.com"
   },
   "publisher": "chouchouji",
+  "icon": "media/icon.png",
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "pi",
+    "ai",
+    "coding agent",
+    "chat",
+    "assistant",
+    "code generation"
+  ],
+  "galleryBanner": {
+    "color": "#09090b",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chouchouji/pi-vscode-extension.git",
+    "directory": "packages/vscode-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/chouchouji/pi-vscode-extension/issues"
+  },
+  "homepage": "https://github.com/chouchouji/pi-vscode-extension#readme",
   "main": "./dist/extension.js",
   "types": "./dist/extension.d.ts",
   "files": [

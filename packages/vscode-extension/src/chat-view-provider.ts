@@ -1,7 +1,13 @@
 import { isAbsolute, resolve } from "node:path";
 import * as vscode from "vscode";
 import { EditApprovalController } from "./edit-approval-controller.ts";
-import { getWorkspaceCwd, listSessionSummaries, PiAgentService, type PiAgentServiceEvent } from "./pi-agent-service.ts";
+import {
+	getWorkspaceCwd,
+	listSessionSummaries,
+	type ModelSelection,
+	PiAgentService,
+	type PiAgentServiceEvent,
+} from "./pi-agent-service.ts";
 import {
 	type ChatMessage,
 	type HostToWebviewMessage,
@@ -12,6 +18,8 @@ import {
 	type WebviewToHostMessage,
 } from "./protocol.ts";
 import { getWebviewHtml } from "./webview/index.ts";
+
+type ModelQuickPickItem = vscode.QuickPickItem & ModelSelection;
 
 export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	private view?: vscode.WebviewView;
@@ -52,6 +60,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		});
 		this.postState();
 		void this.refreshSessions();
+		void this.refreshModelStatus();
 	}
 
 	reveal(): void {
@@ -83,6 +92,44 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 		this.post({ type: "toggleSessionHistory" });
+	}
+
+	async selectModel(): Promise<void> {
+		if (this.running) {
+			await vscode.window.showInformationMessage("Cannot switch model while Pi is running.");
+			return;
+		}
+
+		const service = await this.ensureService();
+		const selections = await service.listModelSelections();
+		if (selections.length === 0) {
+			await vscode.window.showWarningMessage("No Pi models found. Configure models.json or Pi providers first.");
+			return;
+		}
+
+		const items: ModelQuickPickItem[] = selections.map((selection) => ({
+			...selection,
+			label: selection.label,
+			description: selection.configured ? undefined : "Not available",
+			detail: selection.detail,
+			picked: selection.active,
+		}));
+		const picked = await vscode.window.showQuickPick(items, {
+			matchOnDescription: true,
+			matchOnDetail: true,
+			placeHolder: "Select Pi provider/model",
+		});
+		if (!picked) {
+			return;
+		}
+
+		try {
+			await service.selectModel(picked.provider, picked.modelId);
+		} catch (error) {
+			await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		this.postState();
 	}
 
 	async explainCurrentFile(): Promise<void> {
@@ -208,6 +255,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			case "new":
 				await this.newChat();
 				break;
+			case "selectModel":
+				await this.selectModel();
+				break;
 			case "switchSession":
 				await this.switchSession(message.path);
 				break;
@@ -293,6 +343,11 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			});
 		}
 		this.post({ type: "sessions", sessions: this.sessions, activeSessionPath: this.activeSessionPath });
+	}
+
+	private async refreshModelStatus(): Promise<void> {
+		const service = await this.ensureService();
+		await service.refreshModelStatus();
 	}
 
 	private postState(): void {

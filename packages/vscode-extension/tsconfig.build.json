@@ -12,8 +12,9 @@
 			"@earendil-works/pi-coding-agent/*": ["../coding-agent/dist/*.d.ts"],
 			"@earendil-works/pi-mcp-adapter": ["../mcp-adapter/dist/index.d.ts"],
 			"@earendil-works/pi-mcp-adapter/*": ["../mcp-adapter/dist/*.d.ts"]
-		}
+		},
+		"types": ["node", "vscode"]
 	},
-	"include": ["src/**/*.ts", "src/**/*.d.ts"],
+	"include": ["src/**/*.ts"],
 	"exclude": ["node_modules", "dist"]
 }

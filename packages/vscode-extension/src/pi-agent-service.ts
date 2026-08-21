@@ -7,9 +7,11 @@ import {
 	DefaultResourceLoader,
 	getAgentDir,
 	getDefaultSessionDir,
+	ModelRuntime,
 	type SessionEntry,
 	type SessionInfo,
 	SessionManager,
+	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
 import * as vscode from "vscode";
@@ -48,6 +50,17 @@ interface ListSessionSummariesOptions {
 	agentDir?: string;
 	activeSessionPath?: string;
 }
+
+export interface ModelSelection {
+	provider: string;
+	modelId: string;
+	label: string;
+	detail: string;
+	configured: boolean;
+	active: boolean;
+}
+
+type RuntimeModel = ReturnType<ModelRuntime["getModels"]>[number];
 
 function createId(prefix: string): string {
 	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -258,11 +271,21 @@ function getModelStatus(session: AgentSession): ModelStatus | undefined {
 		return undefined;
 	}
 
-	const thinkingSuffix = session.thinkingLevel === "off" ? "" : `, thinking ${session.thinkingLevel}`;
+	return modelStatusFromModel(
+		model,
+		session.thinkingLevel === "off" ? undefined : `thinking ${session.thinkingLevel}`,
+	);
+}
+
+function modelStatusFromModel(model: RuntimeModel, suffix?: string): ModelStatus {
 	return {
 		label: `${model.provider}/${model.name || model.id}`,
-		detail: `${model.provider}/${model.id}${thinkingSuffix}`,
+		detail: [model.provider, model.id].join("/").concat(suffix ? `, ${suffix}` : ""),
 	};
+}
+
+function modelKey(provider: string, modelId: string): string {
+	return `${provider}/${modelId}`;
 }
 
 export class PiAgentService {
@@ -277,6 +300,7 @@ export class PiAgentService {
 	private readonly agentDir?: string;
 	private readonly extensionPath: string;
 	private permissionMode: PermissionMode;
+	private modelRuntimePromise: Promise<ModelRuntime> | undefined;
 	private readonly onEvent: (event: PiAgentServiceEvent) => void;
 	private readonly confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
 	private readonly confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
@@ -303,6 +327,62 @@ export class PiAgentService {
 		}
 		this.permissionMode = permissionMode;
 		this.disposeSession();
+	}
+
+	async refreshModelStatus(): Promise<void> {
+		const sessionStatus = this.session ? getModelStatus(this.session) : undefined;
+		if (sessionStatus) {
+			this.onEvent({ type: "modelStatus", modelStatus: sessionStatus });
+			return;
+		}
+		this.onEvent({ type: "modelStatus", modelStatus: await this.getConfiguredModelStatus() });
+	}
+
+	async listModelSelections(): Promise<ModelSelection[]> {
+		const runtime = await this.ensureModelRuntime();
+		const availableModels = [...(await runtime.getAvailable())];
+		const availableKeys = new Set(availableModels.map((model) => modelKey(model.provider, model.id)));
+		const models = availableModels.length > 0 ? availableModels : [...runtime.getModels()];
+		const activeModel = this.session?.model;
+		const activeKey = activeModel ? modelKey(activeModel.provider, activeModel.id) : this.getConfiguredModelKey();
+
+		return models
+			.map((model) => {
+				const provider = runtime.getProvider(model.provider);
+				const key = modelKey(model.provider, model.id);
+				const configured = availableKeys.has(key);
+				const label = `${model.provider}/${model.name || model.id}`;
+				const detailParts = [provider?.name ?? model.provider, model.id];
+				if (!configured && availableModels.length === 0) {
+					detailParts.push("not available");
+				}
+				return {
+					provider: model.provider,
+					modelId: model.id,
+					label,
+					detail: detailParts.join(" - "),
+					configured,
+					active: key === activeKey,
+				};
+			})
+			.sort((a, b) => a.label.localeCompare(b.label));
+	}
+
+	async selectModel(provider: string, modelId: string): Promise<void> {
+		const runtime = await this.ensureModelRuntime();
+		const model = runtime.getModel(provider, modelId);
+		if (!model) {
+			throw new Error(`Model not found: ${provider}/${modelId}`);
+		}
+		if (!(await runtime.checkAuth(model.provider))) {
+			throw new Error(`Model is not available: ${provider}/${modelId}`);
+		}
+		if (this.session) {
+			await this.session.setModel(model);
+		} else {
+			this.createFileSettingsManager().setDefaultModelAndProvider(provider, modelId);
+		}
+		this.onEvent({ type: "modelStatus", modelStatus: modelStatusFromModel(model) });
 	}
 
 	async newSession(): Promise<void> {
@@ -366,6 +446,54 @@ export class PiAgentService {
 		this.disposeSession();
 	}
 
+	private getResolvedAgentDir(): string {
+		return this.agentDir ? resolve(this.agentDir) : getAgentDir();
+	}
+
+	private ensureModelRuntime(): Promise<ModelRuntime> {
+		if (!this.modelRuntimePromise) {
+			const agentDir = this.agentDir ? resolve(this.agentDir) : undefined;
+			this.modelRuntimePromise = ModelRuntime.create({
+				authPath: agentDir ? resolve(agentDir, "auth.json") : undefined,
+				modelsPath: agentDir ? resolve(agentDir, "models.json") : undefined,
+			});
+		}
+		return this.modelRuntimePromise;
+	}
+
+	private createFileSettingsManager(): SettingsManager {
+		return SettingsManager.create(this.cwd, this.getResolvedAgentDir());
+	}
+
+	private createSessionSettingsManager(): SettingsManager {
+		return this.createFileSettingsManager();
+	}
+
+	private getConfiguredDefaultModelConfig(): { defaultProvider?: string; defaultModel?: string } {
+		const settingsManager = this.createFileSettingsManager();
+		return {
+			defaultProvider: settingsManager.getDefaultProvider(),
+			defaultModel: settingsManager.getDefaultModel(),
+		};
+	}
+
+	private getConfiguredModelKey(): string | undefined {
+		const config = this.getConfiguredDefaultModelConfig();
+		return config.defaultProvider && config.defaultModel
+			? modelKey(config.defaultProvider, config.defaultModel)
+			: undefined;
+	}
+
+	private async getConfiguredModelStatus(): Promise<ModelStatus | undefined> {
+		const config = this.getConfiguredDefaultModelConfig();
+		if (!config.defaultProvider || !config.defaultModel) {
+			return undefined;
+		}
+		const runtime = await this.ensureModelRuntime();
+		const model = runtime.getModel(config.defaultProvider, config.defaultModel);
+		return model ? modelStatusFromModel(model) : undefined;
+	}
+
 	private async ensureSession(): Promise<AgentSession> {
 		if (this.session) {
 			return this.session;
@@ -383,10 +511,13 @@ export class PiAgentService {
 			this.permissionMode,
 		);
 		const agentDir = this.agentDir ? resolve(this.agentDir) : getAgentDir();
+		const settingsManager = this.createSessionSettingsManager();
+		const modelRuntime = await this.ensureModelRuntime();
 		const bundledSkillPaths = this.getBundledSkillPaths();
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: this.cwd,
 			agentDir,
+			settingsManager,
 			extensionFactories: [createMcpAdapter({ cwd: this.cwd })],
 			additionalSkillPaths: bundledSkillPaths,
 			appendSystemPrompt: this.getPermissionModeSystemPrompt(),
@@ -400,7 +531,9 @@ export class PiAgentService {
 			excludeTools:
 				this.permissionMode === "code" ? MUTATING_BUILTIN_TOOL_NAMES : [...MUTATING_BUILTIN_TOOL_NAMES, "bash"],
 			customTools,
+			modelRuntime,
 			resourceLoader,
+			settingsManager,
 			sessionManager: this.sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "startup" },
 		});
@@ -632,7 +765,11 @@ export class PiAgentService {
 
 	private emitModelStatus(): void {
 		const session = this.session;
-		this.onEvent({ type: "modelStatus", modelStatus: session ? getModelStatus(session) : undefined });
+		if (session) {
+			this.onEvent({ type: "modelStatus", modelStatus: getModelStatus(session) });
+			return;
+		}
+		void this.refreshModelStatus();
 	}
 }
 

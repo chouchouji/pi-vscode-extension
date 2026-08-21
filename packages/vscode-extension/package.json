@@ -56,7 +56,8 @@
     "onCommand:pi.chat.new",
     "onCommand:pi.chat.addSelection",
     "onCommand:pi.chat.explainCurrentFile",
-    "onCommand:pi.chat.history"
+    "onCommand:pi.chat.history",
+    "onCommand:pi.chat.selectModel"
   ],
   "contributes": {
     "commands": [
@@ -80,6 +81,10 @@
         "command": "pi.chat.history",
         "title": "Pi: Chat History",
         "icon": "$(history)"
+      },
+      {
+        "command": "pi.chat.selectModel",
+        "title": "Pi: Select Model"
       }
     ],
     "viewsContainers": {
@@ -162,6 +167,7 @@
   },
   "devDependencies": {
     "@types/node": "24.12.4",
+    "@types/vscode": "1.96.0",
     "@vscode/vsce": "3.9.2",
     "shx": "0.4.0",
     "typescript": "5.9.3"

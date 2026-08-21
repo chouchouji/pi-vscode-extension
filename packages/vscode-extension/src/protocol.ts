@@ -70,6 +70,7 @@ export type WebviewToHostMessage =
 	| { type: "send"; text: string }
 	| { type: "stop" }
 	| { type: "new" }
+	| { type: "selectModel" }
 	| { type: "switchSession"; path: string }
 	| { type: "setPermissionMode"; permissionMode: PermissionMode }
 	| { type: "setApprovalMode"; approvalMode: ApprovalMode }
@@ -86,7 +87,7 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
 		return undefined;
 	}
 
-	if (value.type === "ready" || value.type === "stop" || value.type === "new") {
+	if (value.type === "ready" || value.type === "stop" || value.type === "new" || value.type === "selectModel") {
 		return { type: value.type };
 	}
 

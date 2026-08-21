@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-08-21
+
+### Added
+
+- Added chat input history navigation with the up and down arrow keys.
+
 ## [0.0.3] - 2026-08-21
 
 ### Fixed

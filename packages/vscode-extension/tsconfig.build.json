@@ -1,8 +1,12 @@
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
+		"declaration": false,
+		"declarationMap": false,
+		"inlineSources": false,
 		"outDir": "./dist",
 		"rootDir": "./src",
+		"sourceMap": false,
 		"paths": {
 			"@earendil-works/pi-coding-agent": ["../coding-agent/dist/index.d.ts"],
 			"@earendil-works/pi-coding-agent/*": ["../coding-agent/dist/*.d.ts"],

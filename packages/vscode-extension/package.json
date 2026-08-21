@@ -1,7 +1,7 @@
 {
   "name": "pi-vscode-extension",
   "displayName": "Pi Code Assistant",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "AI coding assistant for VS Code powered by Pi",
   "type": "module",
   "license": "MIT",
@@ -38,7 +38,6 @@
   },
   "homepage": "https://github.com/chouchouji/pi-vscode-extension#readme",
   "main": "./dist/extension.js",
-  "types": "./dist/extension.d.ts",
   "files": [
     "dist",
     "media",

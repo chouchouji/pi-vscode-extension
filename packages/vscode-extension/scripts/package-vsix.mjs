@@ -14,7 +14,6 @@ const outDir = process.env.PI_VSCODE_VSIX_OUT
 	: join(repoRoot, "artifacts", "vscode-extension");
 const outPath = join(outDir, `${packageJson.name}-${packageJson.version}.vsix`);
 const stagingRoot = await mkdtemp(join(tmpdir(), "pi-vscode-extension-vsix-"));
-const distSource = join(packageRoot, "dist");
 
 function run(command, args, cwd) {
 	const result = spawnSync(command, args, {
@@ -27,11 +26,19 @@ function run(command, args, cwd) {
 	}
 }
 
-function shouldStageFile(source) {
-	if (!source.startsWith(distSource)) {
-		return true;
+function stripUnreleasedSection(content) {
+	const header = "## [Unreleased]";
+	const headerStart = content.indexOf(header);
+	if (headerStart === -1) {
+		return content;
 	}
-	return !source.endsWith(".d.ts") && !source.endsWith(".map");
+
+	const nextHeaderStart = content.indexOf("\n## [", headerStart + header.length);
+	if (nextHeaderStart === -1) {
+		return `${content.slice(0, headerStart).trimEnd()}\n`;
+	}
+
+	return `${content.slice(0, headerStart).trimEnd()}\n\n${content.slice(nextHeaderStart + 1).trimStart()}`;
 }
 
 async function removeStaleVsixArtifacts() {
@@ -53,7 +60,7 @@ try {
 		const target = join(stagingRoot, entry);
 		await mkdir(dirname(target), { recursive: true });
 		try {
-			await cp(source, target, { recursive: true, filter: shouldStageFile });
+			await cp(source, target, { recursive: true });
 			copiedEntries.push(entry);
 		} catch (error) {
 			if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
@@ -61,6 +68,12 @@ try {
 			}
 			throw error;
 		}
+	}
+
+	if (copiedEntries.includes("CHANGELOG.md")) {
+		const stagedChangelogPath = join(stagingRoot, "CHANGELOG.md");
+		const stagedChangelog = await readFile(stagedChangelogPath, "utf8");
+		await writeFile(stagedChangelogPath, stripUnreleasedSection(stagedChangelog));
 	}
 
 	const stagedPackageJson = {
@@ -71,7 +84,6 @@ try {
 	delete stagedPackageJson.dependencies;
 	delete stagedPackageJson.devDependencies;
 	delete stagedPackageJson.optionalDependencies;
-	delete stagedPackageJson.types;
 	await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(stagedPackageJson, undefined, "\t")}\n`);
 
 	await removeStaleVsixArtifacts();

@@ -19,13 +19,7 @@ async function removeBuildArtifacts(dir) {
 			await removeBuildArtifacts(path);
 			continue;
 		}
-		if (
-			(entry.name.endsWith(".js") ||
-				entry.name.endsWith(".js.map") ||
-				entry.name.endsWith(".d.ts") ||
-				entry.name.endsWith(".d.ts.map")) &&
-			entry.name !== "extension.bundle.js"
-		) {
+		if (entry.name.endsWith(".js") && entry.name !== "extension.bundle.js") {
 			await rm(path);
 		}
 	}

@@ -35,6 +35,9 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		let approvalModeValue = "ask";
 		let openSelectKind = "";
 		let highlighterLoadPromise;
+		let userPromptHistory = [];
+		let promptHistoryCursor;
+		let draftBeforePromptHistory = "";
 		const permissionModeOptions = [
 			{ value: "ask", label: "Ask", description: "Read-only answers and explanations." },
 			{ value: "plan", label: "Plan", description: "Read-only implementation plans." },
@@ -1219,6 +1222,82 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			renderSessionList();
 		}
 
+		function resetPromptHistoryNavigation() {
+			promptHistoryCursor = undefined;
+			draftBeforePromptHistory = "";
+		}
+
+		function setUserPromptHistory(messages) {
+			userPromptHistory = messages
+				.filter((message) => message.role === "user" && typeof message.text === "string" && message.text.trim())
+				.map((message) => message.text);
+			resetPromptHistoryNavigation();
+		}
+
+		function appendUserPromptToHistory(message) {
+			if (message.role === "user" && typeof message.text === "string" && message.text.trim()) {
+				userPromptHistory.push(message.text);
+				resetPromptHistoryNavigation();
+			}
+		}
+
+		function replaceInputValue(value) {
+			inputEl.value = value;
+			const cursor = value.length;
+			inputEl.setSelectionRange(cursor, cursor);
+		}
+
+		function isInputSelectionCollapsed() {
+			return inputEl.selectionStart === inputEl.selectionEnd;
+		}
+
+		function isCursorOnFirstInputLine() {
+			return inputEl.value.lastIndexOf("\\n", inputEl.selectionStart - 1) === -1;
+		}
+
+		function isCursorOnLastInputLine() {
+			return inputEl.value.indexOf("\\n", inputEl.selectionEnd) === -1;
+		}
+
+		function shouldHandlePromptHistoryKey(event, direction) {
+			if (direction === "next" && promptHistoryCursor === undefined) {
+				return false;
+			}
+			if (
+				event.isComposing ||
+				event.metaKey ||
+				event.ctrlKey ||
+				event.altKey ||
+				event.shiftKey ||
+				userPromptHistory.length === 0 ||
+				!isInputSelectionCollapsed()
+			) {
+				return false;
+			}
+			return direction === "previous" ? isCursorOnFirstInputLine() : isCursorOnLastInputLine();
+		}
+
+		function navigatePromptHistory(direction) {
+			if (promptHistoryCursor === undefined) {
+				draftBeforePromptHistory = inputEl.value;
+				promptHistoryCursor = userPromptHistory.length;
+			}
+
+			if (direction === "previous") {
+				promptHistoryCursor = Math.max(0, promptHistoryCursor - 1);
+				replaceInputValue(userPromptHistory[promptHistoryCursor] || "");
+				return;
+			}
+
+			promptHistoryCursor = Math.min(userPromptHistory.length, promptHistoryCursor + 1);
+			if (promptHistoryCursor === userPromptHistory.length) {
+				replaceInputValue(draftBeforePromptHistory);
+				resetPromptHistoryNavigation();
+				return;
+			}
+			replaceInputValue(userPromptHistory[promptHistoryCursor] || "");
+		}
+
 		function setState(state) {
 			messagesEl.textContent = "";
 			approvalsEl.textContent = "";
@@ -1232,6 +1311,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 					reviewedApprovalIds.delete(id);
 				}
 			}
+			setUserPromptHistory(state.messages);
 			for (const message of state.messages) renderMessage(message);
 			for (const approval of state.approvals) renderApproval(approval);
 			updateApprovalBatch();
@@ -1247,6 +1327,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			const text = inputEl.value.trim();
 			if (!text || running) return;
 			inputEl.value = "";
+			resetPromptHistoryNavigation();
 			vscode.postMessage({ type: "send", text });
 		}
 
@@ -1322,14 +1403,26 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
 				send();
+				return;
+			}
+			if (event.key === "ArrowUp" && shouldHandlePromptHistoryKey(event, "previous")) {
+				event.preventDefault();
+				navigatePromptHistory("previous");
+				return;
+			}
+			if (event.key === "ArrowDown" && shouldHandlePromptHistoryKey(event, "next")) {
+				event.preventDefault();
+				navigatePromptHistory("next");
 			}
 		});
+		inputEl.addEventListener("input", resetPromptHistoryNavigation);
 
 		window.addEventListener("message", (event) => {
 			const message = event.data;
 			if (message.type === "state") {
 				setState(message);
 			} else if (message.type === "append") {
+				appendUserPromptToHistory(message.message);
 				renderMessage(message.message);
 			} else if (message.type === "appendDelta") {
 				const existing = messageData.get(message.id);
@@ -1360,6 +1453,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				removeApproval(message.id);
 			} else if (message.type === "prefill") {
 				inputEl.value = message.text;
+				resetPromptHistoryNavigation();
 				inputEl.focus();
 			} else if (message.type === "toggleSessionHistory") {
 				setSessionPanelOpen(sessionPanelEl.hidden);

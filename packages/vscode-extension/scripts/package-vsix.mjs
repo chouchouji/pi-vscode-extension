@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +34,18 @@ function shouldStageFile(source) {
 	return !source.endsWith(".d.ts") && !source.endsWith(".map");
 }
 
+async function removeStaleVsixArtifacts() {
+	await mkdir(outDir, { recursive: true });
+	const entries = await readdir(outDir);
+	const artifactPrefix = `${packageJson.name}-`;
+
+	for (const entry of entries) {
+		if (entry.startsWith(artifactPrefix) && entry.endsWith(".vsix")) {
+			await rm(join(outDir, entry));
+		}
+	}
+}
+
 try {
 	const copiedEntries = [];
 	for (const entry of packageJson.files ?? []) {
@@ -62,7 +74,7 @@ try {
 	delete stagedPackageJson.types;
 	await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(stagedPackageJson, undefined, "\t")}\n`);
 
-	await mkdir(outDir, { recursive: true });
+	await removeStaleVsixArtifacts();
 	run("vsce", ["package", "--allow-missing-repository", "--out", outPath], stagingRoot);
 	console.log(`Packaged ${basename(outPath)}`);
 } finally {

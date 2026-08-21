@@ -119,7 +119,15 @@ Attribution:
 
 ## Releasing
 
-**Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
+**VS Code extension exception**: `packages/vscode-extension` is versioned and released independently. It does not follow lockstep versioning. For a VS Code extension release, add entries to `packages/vscode-extension/CHANGELOG.md` under `## [Unreleased]`, then run:
+
+```bash
+npm run release:vscode-extension -- --bump-type patch
+```
+
+The VS Code extension release script bumps only `packages/vscode-extension`, updates its changelog from `[Unreleased]`, runs `npm run check`, and packages the VSIX. It does not commit, tag, push, or publish to the Marketplace.
+
+**Lockstep versioning**: all other release packages share one version; every lockstep release updates them together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
 
 1. **Update CHANGELOGs**: ask the user whether they ran the `/cl` prompt on the latest commit on `main`. If not, they must run `/cl` first to audit and update each package's `[Unreleased]` section before releasing.
 

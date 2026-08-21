@@ -25,7 +25,8 @@
 		"version:set": "npm version -ws",
 		"prepublishOnly": "npm run clean && npm run build && npm run check",
 		"package:vscode-vsix": "npm run build:offline && node packages/vscode-extension/scripts/package-vsix.mjs",
-		"install:vscode-vsix": "npm --prefix packages/vscode-extension run install:vsix"
+		"install:vscode-vsix": "npm --prefix packages/vscode-extension run install:vsix",
+		"release:vscode-extension": "node scripts/release-vscode-extension.mjs"
 	},
 	"devDependencies": {
 		"@anthropic-ai/sandbox-runtime": "0.0.26",

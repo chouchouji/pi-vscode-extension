@@ -709,15 +709,25 @@ export function getWebviewStyles(): string {
 			font-size: 0.82em;
 		}
 		.model-status {
+			flex: 1 1 auto;
 			height: 26px;
+			max-width: 220px;
 			padding: 0 7px;
+			border: 0;
 			border-radius: 5px;
 			color: var(--vscode-descriptionForeground);
+			background: transparent;
+			cursor: pointer;
+			font: inherit;
 			line-height: 26px;
 			min-width: 0;
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
+		}
+		.model-status:hover {
+			color: var(--vscode-foreground);
+			background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
 		}
 		.statusbar {
 			display: flex;

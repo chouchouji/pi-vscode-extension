@@ -152,6 +152,19 @@ declare module "vscode" {
 		get<T>(section: string, defaultValue: T): T;
 	}
 
+	export interface QuickPickItem {
+		label: string;
+		description?: string;
+		detail?: string;
+		picked?: boolean;
+	}
+
+	export interface QuickPickOptions {
+		placeHolder?: string;
+		matchOnDescription?: boolean;
+		matchOnDetail?: boolean;
+	}
+
 	export namespace window {
 		export const activeTextEditor: TextEditor | undefined;
 		export const visibleTextEditors: readonly TextEditor[];
@@ -161,7 +174,12 @@ declare module "vscode" {
 			options?: WebviewViewProviderOptions,
 		): Disposable;
 		export function showErrorMessage(message: string, ...items: string[]): Thenable<string | undefined>;
+		export function showWarningMessage(message: string, ...items: string[]): Thenable<string | undefined>;
 		export function showInformationMessage(message: string, ...items: string[]): Thenable<string | undefined>;
+		export function showQuickPick<T extends QuickPickItem>(
+			items: readonly T[] | Thenable<readonly T[]>,
+			options?: QuickPickOptions,
+		): Thenable<T | undefined>;
 		export function showTextDocument(
 			uri: Uri,
 			options?: { preview?: boolean; viewColumn?: ViewColumn },

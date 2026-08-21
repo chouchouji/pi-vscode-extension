@@ -56,7 +56,8 @@
     "onCommand:pi.chat.new",
     "onCommand:pi.chat.addSelection",
     "onCommand:pi.chat.explainCurrentFile",
-    "onCommand:pi.chat.history"
+    "onCommand:pi.chat.history",
+    "onCommand:pi.chat.selectModel"
   ],
   "contributes": {
     "commands": [
@@ -80,6 +81,10 @@
         "command": "pi.chat.history",
         "title": "Pi: Chat History",
         "icon": "$(history)"
+      },
+      {
+        "command": "pi.chat.selectModel",
+        "title": "Pi: Select Model"
       }
     ],
     "viewsContainers": {

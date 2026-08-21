@@ -33,7 +33,7 @@ export function getWebviewBody(): string {
 							<span class="select-icon">◇</span>
 							<span id="modeLabel" class="select-label">Code</span>
 						</button>
-						<div id="modelStatus" class="model-status" title="No model">Models</div>
+						<button id="modelStatus" class="model-status" type="button" title="Select model">Models</button>
 					</div>
 					<div class="composer-actions">
 						<button id="stop" class="send-button" type="button" title="Stop current response" disabled hidden>■</button>

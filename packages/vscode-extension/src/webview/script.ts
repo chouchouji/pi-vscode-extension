@@ -1081,7 +1081,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		function setModelStatus(modelStatus) {
 			const label = modelStatus ? modelStatus.label : "Models";
 			modelStatusEl.textContent = label;
-			modelStatusEl.title = modelStatus ? modelStatus.detail : "No model selected";
+			modelStatusEl.title = modelStatus ? modelStatus.detail : "Select provider/model";
 		}
 
 		function setPermissionMode(permissionMode) {
@@ -1334,6 +1334,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		sendEl.addEventListener("click", send);
 		stopEl.addEventListener("click", () => vscode.postMessage({ type: "stop" }));
 		newEl.addEventListener("click", () => vscode.postMessage({ type: "new" }));
+		modelStatusEl.addEventListener("click", () => vscode.postMessage({ type: "selectModel" }));
 		reviewAllEl.addEventListener("click", () => {
 			for (const id of approvalData.keys()) {
 				reviewedApprovalIds.add(id);

@@ -12,14 +12,20 @@ const highlighterEntryPoint = join(packageRoot, "src", "webview", "highlighter.t
 const highlighterPath = join(distDir, "webview-highlighter.js");
 const bundledPath = join(distDir, "extension.bundle.js");
 
-async function removeRuntimeJs(dir) {
+async function removeBuildArtifacts(dir) {
 	for (const entry of await readdir(dir, { withFileTypes: true })) {
 		const path = join(dir, entry.name);
 		if (entry.isDirectory()) {
-			await removeRuntimeJs(path);
+			await removeBuildArtifacts(path);
 			continue;
 		}
-		if ((entry.name.endsWith(".js") || entry.name.endsWith(".js.map")) && entry.name !== "extension.bundle.js") {
+		if (
+			(entry.name.endsWith(".js") ||
+				entry.name.endsWith(".js.map") ||
+				entry.name.endsWith(".d.ts") ||
+				entry.name.endsWith(".d.ts.map")) &&
+			entry.name !== "extension.bundle.js"
+		) {
 			await rm(path);
 		}
 	}
@@ -84,7 +90,7 @@ await build({
 	},
 });
 
-await removeRuntimeJs(distDir);
+await removeBuildArtifacts(distDir);
 await rename(bundledPath, entryPoint);
 
 await build({
@@ -101,7 +107,7 @@ await build({
 await copyMatchingFiles(
 	join(repoRoot, "packages", "coding-agent", "dist", "modes", "interactive", "theme"),
 	join(distDir, "modes", "interactive", "theme"),
-	(name) => name.endsWith(".json"),
+	(name) => name === "dark.json" || name === "light.json",
 );
 await copyMatchingFiles(
 	join(repoRoot, "packages", "coding-agent", "dist", "modes", "interactive", "assets"),

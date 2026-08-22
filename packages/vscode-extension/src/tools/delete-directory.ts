@@ -28,7 +28,7 @@ function validateWorkspaceDirectory(cwd: string, uri: vscode.Uri): string | unde
 	if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
 		return "Refusing to delete a directory outside the workspace root.";
 	}
-	return undefined;
+	return;
 }
 
 async function scanDirectory(uri: vscode.Uri): Promise<DirectoryScan | string> {

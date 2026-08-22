@@ -3,7 +3,7 @@ import { PiChatViewProvider } from "./chat-view-provider.ts";
 
 let provider: PiChatViewProvider | undefined;
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext) {
 	provider = new PiChatViewProvider(context);
 
 	context.subscriptions.push(
@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	);
 }
 
-export function deactivate(): void {
+export function deactivate() {
 	provider?.dispose();
 	provider = undefined;
 }

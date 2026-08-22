@@ -47,7 +47,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	resolveWebviewView(webviewView: vscode.WebviewView): void {
+	resolveWebviewView(webviewView: vscode.WebviewView) {
 		this.view = webviewView;
 		webviewView.webview.options = {
 			enableScripts: true,
@@ -74,7 +74,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		void this.refreshModelStatus();
 	}
 
-	reveal(): void {
+	reveal() {
 		if (this.view?.show) {
 			this.view.show(true);
 			return;
@@ -82,7 +82,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		void vscode.commands.executeCommand("workbench.view.extension.pi");
 	}
 
-	async newChat(): Promise<void> {
+	async newChat() {
 		this.approvalController.rejectPendingApprovals();
 		const service = await this.ensureService();
 		await service.newSession();
@@ -92,12 +92,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.postState();
 	}
 
-	prefill(text: string): void {
+	prefill(text: string) {
 		this.reveal();
 		this.post({ type: "prefill", text });
 	}
 
-	toggleSessionHistory(): void {
+	toggleSessionHistory() {
 		if (!this.view) {
 			this.reveal();
 			return;
@@ -105,7 +105,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post({ type: "toggleSessionHistory" });
 	}
 
-	async selectModel(): Promise<void> {
+	async selectModel() {
 		if (this.running) {
 			await vscode.window.showInformationMessage("Cannot switch model while Pi is running.");
 			return;
@@ -143,7 +143,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.postState();
 	}
 
-	async explainCurrentFile(): Promise<void> {
+	async explainCurrentFile() {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			await vscode.window.showErrorMessage("No active editor.");
@@ -155,7 +155,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		);
 	}
 
-	async addSelection(): Promise<void> {
+	async addSelection() {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			await vscode.window.showErrorMessage("No active editor.");
@@ -181,7 +181,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		);
 	}
 
-	dispose(): void {
+	dispose() {
 		this.approvalController.rejectPendingApprovals();
 		this.service?.dispose();
 	}
@@ -217,7 +217,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		return service;
 	}
 
-	private handleServiceEvent(event: PiAgentServiceEvent): void {
+	private handleServiceEvent(event: PiAgentServiceEvent) {
 		switch (event.type) {
 			case "append":
 				this.messages.push(event.message);
@@ -251,7 +251,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post(event);
 	}
 
-	private async handleWebviewMessage(message: WebviewToHostMessage): Promise<void> {
+	private async handleWebviewMessage(message: WebviewToHostMessage) {
 		switch (message.method) {
 			case "ready":
 				this.postState();
@@ -294,11 +294,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	private async openFileReference(
-		path: string,
-		line: number | undefined,
-		character: number | undefined,
-	): Promise<void> {
+	private async openFileReference(path: string, line: number | undefined, character: number | undefined) {
 		const trimmed = path.trim();
 		if (!trimmed) {
 			return;
@@ -316,7 +312,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		editor.selection = new vscode.Selection(position, position);
 	}
 
-	private async sendPrompt(text: string): Promise<void> {
+	private async sendPrompt(text: string) {
 		const trimmed = text.trim();
 		if (!trimmed || this.running) {
 			return;
@@ -327,7 +323,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		await this.refreshSessions();
 	}
 
-	private async switchSession(path: string): Promise<void> {
+	private async switchSession(path: string) {
 		if (this.running) {
 			return;
 		}
@@ -341,7 +337,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.postState();
 	}
 
-	private async refreshSessions(): Promise<void> {
+	private async refreshSessions() {
 		if (this.service) {
 			this.sessions = await this.service.listSessions();
 			this.activeSessionPath = this.service.getActiveSessionPath();
@@ -356,12 +352,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post({ type: "sessions", sessions: this.sessions, activeSessionPath: this.activeSessionPath });
 	}
 
-	private async refreshModelStatus(): Promise<void> {
+	private async refreshModelStatus() {
 		const service = await this.ensureService();
 		await service.refreshModelStatus();
 	}
 
-	private postState(): void {
+	private postState() {
 		this.post({
 			type: "state",
 			messages: this.messages,
@@ -375,12 +371,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	private post(message: HostToWebviewMessage | PiAgentServiceEvent): void {
+	private post(message: HostToWebviewMessage) {
 		const event: HostToWebviewEventEnvelope = { kind: "event", event: message };
 		void this.view?.webview.postMessage(event);
 	}
 
-	private respond(response: WebviewResponseEnvelope): void {
+	private respond(response: WebviewResponseEnvelope) {
 		void this.view?.webview.postMessage(response);
 	}
 }

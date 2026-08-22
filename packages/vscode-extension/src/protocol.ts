@@ -109,14 +109,14 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function parseWebviewMessage(value: unknown): WebviewRequestEnvelope | undefined {
 	if (!isRecord(value) || value.kind !== "request" || !isString(value.id) || !isRecord(value.request)) {
-		return undefined;
+		return;
 	}
 
 	const { id } = value;
 	const method = value.request.method;
 	const params = value.request.params;
 	if (!isString(method) || !isRecord(params)) {
-		return undefined;
+		return;
 	}
 
 	if (method === "ready" || method === "stop" || method === "new" || method === "selectModel") {
@@ -163,5 +163,5 @@ export function parseWebviewMessage(value: unknown): WebviewRequestEnvelope | un
 		return { kind: "request", id, request: { method, params: { path: params.path, line, character } } };
 	}
 
-	return undefined;
+	return;
 }

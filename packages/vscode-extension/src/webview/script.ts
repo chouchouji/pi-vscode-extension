@@ -507,13 +507,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function parseToolArgs(tool) {
 			if (!tool?.args) {
-				return undefined;
+				return;
 			}
 			try {
 				const parsed = JSON.parse(tool.args);
 				return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
 			} catch {
-				return undefined;
+				return;
 			}
 		}
 

@@ -78,7 +78,7 @@ function createId(prefix: string): string {
 	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function contentToText(content: AgentSessionEvent extends never ? never : unknown): string {
+function contentToText(content: unknown): string {
 	if (isString(content)) {
 		return content;
 	}
@@ -86,23 +86,6 @@ function contentToText(content: AgentSessionEvent extends never ? never : unknow
 		return "";
 	}
 
-	return content
-		.map((part: unknown) => {
-			if (!isObject(part)) {
-				return "";
-			}
-			return part.type === "text" && isString(part.text) ? part.text : "";
-		})
-		.join("");
-}
-
-function messageContentToText(content: unknown): string {
-	if (isString(content)) {
-		return content;
-	}
-	if (!isArray(content)) {
-		return "";
-	}
 	return content
 		.map((part: unknown) => {
 			if (!isObject(part)) {
@@ -136,11 +119,11 @@ function formatToolOutput(result: unknown, isError: boolean): string {
 
 function formatToolTitle(result: unknown): string | undefined {
 	if (!isObject(result)) {
-		return undefined;
+		return;
 	}
 	const details = result.details;
 	if (!isObject(details)) {
-		return undefined;
+		return;
 	}
 	const title = details.title;
 	return isString(title) && title.trim() ? title : undefined;
@@ -148,7 +131,7 @@ function formatToolTitle(result: unknown): string | undefined {
 
 function formatUnknown(value: unknown): string | undefined {
 	if (value === undefined) {
-		return undefined;
+		return;
 	}
 	if (isString(value)) {
 		return value;
@@ -221,18 +204,18 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 				messages.push({
 					id: entry.id,
 					role: "user",
-					text: messageContentToText(message.content),
+					text: contentToText(message.content),
 				});
 				break;
 			case "assistant":
 				messages.push({
 					id: entry.id,
 					role: message.errorMessage ? "error" : "assistant",
-					text: message.errorMessage ?? messageContentToText(message.content),
+					text: message.errorMessage ?? contentToText(message.content),
 				});
 				break;
 			case "toolResult": {
-				const output = messageContentToText(message.content);
+				const output = contentToText(message.content);
 				messages.push({
 					id: entry.id,
 					role: message.isError ? "error" : "tool",
@@ -264,7 +247,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 					messages.push({
 						id: entry.id,
 						role: "system",
-						text: messageContentToText(message.content),
+						text: contentToText(message.content),
 					});
 				}
 				break;
@@ -280,7 +263,7 @@ const MUTATING_BUILTIN_TOOL_NAMES = ["edit", "write"];
 function getModelStatus(session: AgentSession): ModelStatus | undefined {
 	const model = session.model;
 	if (!model) {
-		return undefined;
+		return;
 	}
 
 	return modelStatusFromModel(
@@ -333,7 +316,7 @@ export class PiAgentService {
 		this.confirmRenameSymbol = options.confirmRenameSymbol;
 	}
 
-	setPermissionMode(permissionMode: PermissionMode): void {
+	setPermissionMode(permissionMode: PermissionMode) {
 		if (this.permissionMode === permissionMode) {
 			return;
 		}
@@ -341,7 +324,7 @@ export class PiAgentService {
 		this.disposeSession();
 	}
 
-	async refreshModelStatus(): Promise<void> {
+	async refreshModelStatus() {
 		const sessionStatus = this.session ? getModelStatus(this.session) : undefined;
 		if (sessionStatus) {
 			this.onEvent({ type: "modelStatus", modelStatus: sessionStatus });
@@ -380,7 +363,7 @@ export class PiAgentService {
 			.sort((a, b) => a.label.localeCompare(b.label));
 	}
 
-	async selectModel(provider: string, modelId: string): Promise<void> {
+	async selectModel(provider: string, modelId: string) {
 		const runtime = await this.ensureModelRuntime();
 		const model = runtime.getModel(provider, modelId);
 		if (!model) {
@@ -397,7 +380,7 @@ export class PiAgentService {
 		this.onEvent({ type: "modelStatus", modelStatus: modelStatusFromModel(model) });
 	}
 
-	async newSession(): Promise<void> {
+	async newSession() {
 		const session = await this.ensureSession();
 		const sessionDir = session.sessionManager.getSessionDir();
 		this.disposeSession();
@@ -405,7 +388,7 @@ export class PiAgentService {
 		await this.ensureSession();
 	}
 
-	async switchSession(path: string): Promise<void> {
+	async switchSession(path: string) {
 		const sessionDir = this.getSessionDir();
 		this.disposeSession();
 		this.sessionManager = SessionManager.open(path, sessionDir, this.cwd);
@@ -425,7 +408,7 @@ export class PiAgentService {
 		return this.sessionManager ? chatMessagesFromEntries(this.sessionManager.buildContextEntries()) : [];
 	}
 
-	async prompt(text: string): Promise<void> {
+	async prompt(text: string) {
 		const session = await this.ensureSession();
 		this.running = true;
 		this.onEvent({ type: "running", running: true });
@@ -445,7 +428,7 @@ export class PiAgentService {
 		}
 	}
 
-	async abort(): Promise<void> {
+	async abort() {
 		if (!this.session || !this.running) {
 			return;
 		}
@@ -454,7 +437,7 @@ export class PiAgentService {
 		this.onEvent({ type: "running", running: false });
 	}
 
-	dispose(): void {
+	dispose() {
 		this.disposeSession();
 	}
 
@@ -499,7 +482,7 @@ export class PiAgentService {
 	private async getConfiguredModelStatus(): Promise<ModelStatus | undefined> {
 		const config = this.getConfiguredDefaultModelConfig();
 		if (!config.defaultProvider || !config.defaultModel) {
-			return undefined;
+			return;
 		}
 		const runtime = await this.ensureModelRuntime();
 		const model = runtime.getModel(config.defaultProvider, config.defaultModel);
@@ -584,9 +567,6 @@ export class PiAgentService {
 		this.sessionManager = result.session.sessionManager;
 		this.unsubscribe = result.session.subscribe((event) => this.handleSessionEvent(event));
 		this.emitModelStatus();
-		for (const diagnostic of result.session.modelRuntime ? [] : []) {
-			console.warn(diagnostic);
-		}
 		if (result.modelFallbackMessage) {
 			this.onEvent({
 				type: "append",
@@ -646,7 +626,7 @@ export class PiAgentService {
 		return [];
 	}
 
-	private disposeSession(): void {
+	private disposeSession() {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.session?.dispose();
@@ -659,7 +639,7 @@ export class PiAgentService {
 		this.emitModelStatus();
 	}
 
-	private handleSessionEvent(event: AgentSessionEvent): void {
+	private handleSessionEvent(event: AgentSessionEvent) {
 		switch (event.type) {
 			case "message_start": {
 				if (event.message.role === "assistant") {
@@ -794,7 +774,7 @@ export class PiAgentService {
 		}
 	}
 
-	private emitModelStatus(): void {
+	private emitModelStatus() {
 		const session = this.session;
 		if (session) {
 			this.onEvent({ type: "modelStatus", modelStatus: getModelStatus(session) });

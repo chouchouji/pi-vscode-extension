@@ -10,11 +10,13 @@ import {
 } from "./pi-agent-service.ts";
 import {
 	type ChatMessage,
+	type HostToWebviewEventEnvelope,
 	type HostToWebviewMessage,
 	type ModelStatus,
 	type PermissionMode,
 	parseWebviewMessage,
 	type SessionSummary,
+	type WebviewResponseEnvelope,
 	type WebviewToHostMessage,
 } from "./protocol.ts";
 import { getWebviewHtml } from "./webview/index.ts";
@@ -45,25 +47,34 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	resolveWebviewView(webviewView: vscode.WebviewView): void {
+	resolveWebviewView(webviewView: vscode.WebviewView) {
 		this.view = webviewView;
 		webviewView.webview.options = {
 			enableScripts: true,
 			localResourceRoots: [this.extensionUri],
 		};
-		webviewView.webview.html = getWebviewHtml(webviewView.webview, this.extensionUri);
 		webviewView.webview.onDidReceiveMessage((message) => {
 			const parsed = parseWebviewMessage(message);
 			if (parsed) {
-				void this.handleWebviewMessage(parsed);
+				void this.handleWebviewMessage(parsed.request)
+					.then(() => this.respond({ kind: "response", id: parsed.id, ok: true }))
+					.catch((error: unknown) =>
+						this.respond({
+							kind: "response",
+							id: parsed.id,
+							ok: false,
+							error: { message: error instanceof Error ? error.message : String(error) },
+						}),
+					);
 			}
 		});
+		webviewView.webview.html = getWebviewHtml(webviewView.webview, this.extensionUri);
 		this.postState();
 		void this.refreshSessions();
 		void this.refreshModelStatus();
 	}
 
-	reveal(): void {
+	reveal() {
 		if (this.view?.show) {
 			this.view.show(true);
 			return;
@@ -71,7 +82,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		void vscode.commands.executeCommand("workbench.view.extension.pi");
 	}
 
-	async newChat(): Promise<void> {
+	async newChat() {
 		this.approvalController.rejectPendingApprovals();
 		const service = await this.ensureService();
 		await service.newSession();
@@ -81,12 +92,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.postState();
 	}
 
-	prefill(text: string): void {
+	prefill(text: string) {
 		this.reveal();
 		this.post({ type: "prefill", text });
 	}
 
-	toggleSessionHistory(): void {
+	toggleSessionHistory() {
 		if (!this.view) {
 			this.reveal();
 			return;
@@ -94,7 +105,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post({ type: "toggleSessionHistory" });
 	}
 
-	async selectModel(): Promise<void> {
+	async selectModel() {
 		if (this.running) {
 			await vscode.window.showInformationMessage("Cannot switch model while Pi is running.");
 			return;
@@ -132,7 +143,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.postState();
 	}
 
-	async explainCurrentFile(): Promise<void> {
+	async explainCurrentFile() {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			await vscode.window.showErrorMessage("No active editor.");
@@ -144,7 +155,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		);
 	}
 
-	async addSelection(): Promise<void> {
+	async addSelection() {
 		const editor = vscode.window.activeTextEditor;
 		if (!editor) {
 			await vscode.window.showErrorMessage("No active editor.");
@@ -170,7 +181,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		);
 	}
 
-	dispose(): void {
+	dispose() {
 		this.approvalController.rejectPendingApprovals();
 		this.service?.dispose();
 	}
@@ -206,7 +217,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		return service;
 	}
 
-	private handleServiceEvent(event: PiAgentServiceEvent): void {
+	private handleServiceEvent(event: PiAgentServiceEvent) {
 		switch (event.type) {
 			case "append":
 				this.messages.push(event.message);
@@ -240,13 +251,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post(event);
 	}
 
-	private async handleWebviewMessage(message: WebviewToHostMessage): Promise<void> {
-		switch (message.type) {
+	private async handleWebviewMessage(message: WebviewToHostMessage) {
+		switch (message.method) {
 			case "ready":
 				this.postState();
 				break;
 			case "send":
-				await this.sendPrompt(message.text);
+				await this.sendPrompt(message.params.text);
 				break;
 			case "stop":
 				this.approvalController.rejectPendingApprovals();
@@ -259,35 +270,31 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 				await this.selectModel();
 				break;
 			case "switchSession":
-				await this.switchSession(message.path);
+				await this.switchSession(message.params.path);
 				break;
 			case "setPermissionMode":
 				this.approvalController.rejectPendingApprovals();
-				this.permissionMode = message.permissionMode;
-				this.service?.setPermissionMode(message.permissionMode);
+				this.permissionMode = message.params.permissionMode;
+				this.service?.setPermissionMode(message.params.permissionMode);
 				this.postState();
 				break;
 			case "setApprovalMode":
-				this.approvalController.setApprovalMode(message.approvalMode);
+				this.approvalController.setApprovalMode(message.params.approvalMode);
 				this.postState();
 				break;
 			case "approvalResponse":
-				await this.approvalController.handleApprovalResponse(message.id, message.action);
+				await this.approvalController.handleApprovalResponse(message.params.id, message.params.action);
 				break;
 			case "approvalBatchResponse":
-				await this.approvalController.handleApprovalBatchResponse(message.action);
+				await this.approvalController.handleApprovalBatchResponse(message.params.action);
 				break;
 			case "openFile":
-				await this.openFileReference(message.path, message.line, message.character);
+				await this.openFileReference(message.params.path, message.params.line, message.params.character);
 				break;
 		}
 	}
 
-	private async openFileReference(
-		path: string,
-		line: number | undefined,
-		character: number | undefined,
-	): Promise<void> {
+	private async openFileReference(path: string, line: number | undefined, character: number | undefined) {
 		const trimmed = path.trim();
 		if (!trimmed) {
 			return;
@@ -305,7 +312,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		editor.selection = new vscode.Selection(position, position);
 	}
 
-	private async sendPrompt(text: string): Promise<void> {
+	private async sendPrompt(text: string) {
 		const trimmed = text.trim();
 		if (!trimmed || this.running) {
 			return;
@@ -316,7 +323,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		await this.refreshSessions();
 	}
 
-	private async switchSession(path: string): Promise<void> {
+	private async switchSession(path: string) {
 		if (this.running) {
 			return;
 		}
@@ -330,7 +337,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.postState();
 	}
 
-	private async refreshSessions(): Promise<void> {
+	private async refreshSessions() {
 		if (this.service) {
 			this.sessions = await this.service.listSessions();
 			this.activeSessionPath = this.service.getActiveSessionPath();
@@ -345,12 +352,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post({ type: "sessions", sessions: this.sessions, activeSessionPath: this.activeSessionPath });
 	}
 
-	private async refreshModelStatus(): Promise<void> {
+	private async refreshModelStatus() {
 		const service = await this.ensureService();
 		await service.refreshModelStatus();
 	}
 
-	private postState(): void {
+	private postState() {
 		this.post({
 			type: "state",
 			messages: this.messages,
@@ -364,7 +371,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
-	private post(message: HostToWebviewMessage | PiAgentServiceEvent): void {
-		void this.view?.webview.postMessage(message);
+	private post(message: HostToWebviewMessage) {
+		const event: HostToWebviewEventEnvelope = { kind: "event", event: message };
+		void this.view?.webview.postMessage(event);
+	}
+
+	private respond(response: WebviewResponseEnvelope) {
+		void this.view?.webview.postMessage(response);
 	}
 }

@@ -1,3 +1,5 @@
+import { isNumber, isObject, isString } from "rattail";
+
 export type PermissionMode = "ask" | "plan" | "code";
 export type ApprovalMode = "ask" | "auto";
 
@@ -65,72 +67,101 @@ export type HostToWebviewMessage =
 	| { type: "prefill"; text: string }
 	| { type: "toggleSessionHistory" };
 
-export type WebviewToHostMessage =
-	| { type: "ready" }
-	| { type: "send"; text: string }
-	| { type: "stop" }
-	| { type: "new" }
-	| { type: "selectModel" }
-	| { type: "switchSession"; path: string }
-	| { type: "setPermissionMode"; permissionMode: PermissionMode }
-	| { type: "setApprovalMode"; approvalMode: ApprovalMode }
-	| { type: "approvalResponse"; id: string; action: ApprovalAction }
-	| { type: "approvalBatchResponse"; action: ApprovalBatchAction }
-	| { type: "openFile"; path: string; line?: number; character?: number };
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+export interface WebviewRequestParams {
+	ready: Record<string, never>;
+	send: { text: string };
+	stop: Record<string, never>;
+	new: Record<string, never>;
+	selectModel: Record<string, never>;
+	switchSession: { path: string };
+	setPermissionMode: { permissionMode: PermissionMode };
+	setApprovalMode: { approvalMode: ApprovalMode };
+	approvalResponse: { id: string; action: ApprovalAction };
+	approvalBatchResponse: { action: ApprovalBatchAction };
+	openFile: { path: string; line?: number; character?: number };
 }
 
-export function parseWebviewMessage(value: unknown): WebviewToHostMessage | undefined {
-	if (!isRecord(value) || typeof value.type !== "string") {
-		return undefined;
+export type WebviewToHostMessage = {
+	[Method in keyof WebviewRequestParams]: {
+		method: Method;
+		params: WebviewRequestParams[Method];
+	};
+}[keyof WebviewRequestParams];
+
+export interface WebviewRequestEnvelope {
+	kind: "request";
+	id: string;
+	request: WebviewToHostMessage;
+}
+
+export type WebviewResponseEnvelope =
+	| { kind: "response"; id: string; ok: true }
+	| { kind: "response"; id: string; ok: false; error: { message: string } };
+
+export interface HostToWebviewEventEnvelope {
+	kind: "event";
+	event: HostToWebviewMessage;
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+	return isObject(value);
+}
+
+export function parseWebviewMessage(value: unknown): WebviewRequestEnvelope | undefined {
+	if (!isRecord(value) || value.kind !== "request" || !isString(value.id) || !isRecord(value.request)) {
+		return;
 	}
 
-	if (value.type === "ready" || value.type === "stop" || value.type === "new" || value.type === "selectModel") {
-		return { type: value.type };
+	const { id } = value;
+	const method = value.request.method;
+	const params = value.request.params;
+	if (!isString(method) || !isRecord(params)) {
+		return;
 	}
 
-	if (value.type === "send" && typeof value.text === "string") {
-		return { type: "send", text: value.text };
+	if (method === "ready" || method === "stop" || method === "new" || method === "selectModel") {
+		return { kind: "request", id, request: { method, params: {} } };
 	}
 
-	if (value.type === "switchSession" && typeof value.path === "string") {
-		return { type: "switchSession", path: value.path };
+	if (method === "send" && isString(params.text)) {
+		return { kind: "request", id, request: { method, params: { text: params.text } } };
+	}
+
+	if (method === "switchSession" && isString(params.path)) {
+		return { kind: "request", id, request: { method, params: { path: params.path } } };
 	}
 
 	if (
-		value.type === "setPermissionMode" &&
-		(value.permissionMode === "ask" || value.permissionMode === "plan" || value.permissionMode === "code")
+		method === "setPermissionMode" &&
+		(params.permissionMode === "ask" || params.permissionMode === "plan" || params.permissionMode === "code")
 	) {
-		return { type: "setPermissionMode", permissionMode: value.permissionMode };
+		return { kind: "request", id, request: { method, params: { permissionMode: params.permissionMode } } };
 	}
 
-	if (value.type === "setApprovalMode" && (value.approvalMode === "ask" || value.approvalMode === "auto")) {
-		return { type: "setApprovalMode", approvalMode: value.approvalMode };
+	if (method === "setApprovalMode" && (params.approvalMode === "ask" || params.approvalMode === "auto")) {
+		return { kind: "request", id, request: { method, params: { approvalMode: params.approvalMode } } };
 	}
 
 	if (
-		value.type === "approvalResponse" &&
-		typeof value.id === "string" &&
-		(value.action === "review" || value.action === "apply" || value.action === "reject")
+		method === "approvalResponse" &&
+		isString(params.id) &&
+		(params.action === "review" || params.action === "apply" || params.action === "reject")
 	) {
-		return { type: "approvalResponse", id: value.id, action: value.action };
+		return { kind: "request", id, request: { method, params: { id: params.id, action: params.action } } };
 	}
 
 	if (
-		value.type === "approvalBatchResponse" &&
-		(value.action === "review" || value.action === "apply" || value.action === "reject")
+		method === "approvalBatchResponse" &&
+		(params.action === "review" || params.action === "apply" || params.action === "reject")
 	) {
-		return { type: "approvalBatchResponse", action: value.action };
+		return { kind: "request", id, request: { method, params: { action: params.action } } };
 	}
 
-	if (value.type === "openFile" && typeof value.path === "string") {
-		const line = typeof value.line === "number" && Number.isFinite(value.line) ? value.line : undefined;
-		const character =
-			typeof value.character === "number" && Number.isFinite(value.character) ? value.character : undefined;
-		return { type: "openFile", path: value.path, line, character };
+	if (method === "openFile" && isString(params.path)) {
+		const line = isNumber(params.line) && Number.isFinite(params.line) ? params.line : undefined;
+		const character = isNumber(params.character) && Number.isFinite(params.character) ? params.character : undefined;
+		return { kind: "request", id, request: { method, params: { path: params.path, line, character } } };
 	}
 
-	return undefined;
+	return;
 }

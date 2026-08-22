@@ -49,7 +49,7 @@ export class EditApprovalController {
 		return this._approvalMode;
 	}
 
-	setApprovalMode(approvalMode: ApprovalMode): void {
+	setApprovalMode(approvalMode: ApprovalMode) {
 		this._approvalMode = approvalMode;
 		if (approvalMode === "auto") {
 			this.resolvePendingApprovals(true);
@@ -218,7 +218,7 @@ export class EditApprovalController {
 		);
 	}
 
-	async handleApprovalResponse(id: string, action: ApprovalAction): Promise<void> {
+	async handleApprovalResponse(id: string, action: ApprovalAction) {
 		const pending = this.pendingApprovals.get(id);
 		if (!pending) {
 			return;
@@ -235,7 +235,7 @@ export class EditApprovalController {
 		this.resolveApproval(id, action === "apply");
 	}
 
-	async handleApprovalBatchResponse(action: ApprovalBatchAction): Promise<void> {
+	async handleApprovalBatchResponse(action: ApprovalBatchAction) {
 		if (action === "review") {
 			for (const pending of this.pendingApprovals.values()) {
 				try {
@@ -250,7 +250,7 @@ export class EditApprovalController {
 		this.resolvePendingApprovals(action === "apply");
 	}
 
-	rejectPendingApprovals(): void {
+	rejectPendingApprovals() {
 		this.resolvePendingApprovals(false);
 	}
 
@@ -294,7 +294,7 @@ export class EditApprovalController {
 		});
 	}
 
-	private resolveApproval(id: string, approved: boolean): void {
+	private resolveApproval(id: string, approved: boolean) {
 		const pending = this.pendingApprovals.get(id);
 		if (!pending) {
 			return;
@@ -309,7 +309,7 @@ export class EditApprovalController {
 		pending.resolve(approved);
 	}
 
-	private resolvePendingApprovals(approved: boolean): void {
+	private resolvePendingApprovals(approved: boolean) {
 		const ids = [...this.pendingApprovals.keys()];
 		for (const id of ids) {
 			this.resolveApproval(id, approved);

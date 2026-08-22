@@ -1,5 +1,31 @@
 export function getWebviewScript(highlighterScriptUri: string, scriptNonce: string): string {
 	return `			const vscode = acquireVsCodeApi();
+		let nextRequestId = 0;
+		const requestTimeoutMs = 60000;
+		const pendingRequests = new Map();
+
+		function call(method, params = {}) {
+			const id = String(++nextRequestId);
+			return new Promise((resolve, reject) => {
+				const timeoutId = window.setTimeout(() => {
+					pendingRequests.delete(id);
+					reject(new Error("Pi request timed out."));
+				}, requestTimeoutMs);
+				pendingRequests.set(id, { resolve, reject, timeoutId });
+				try {
+					vscode.postMessage({ kind: "request", id, request: { method, params } });
+				} catch (error) {
+					window.clearTimeout(timeoutId);
+					pendingRequests.delete(id);
+					reject(error);
+				}
+			});
+		}
+
+		function notify(method, params) {
+			void call(method, params).catch((error) => console.error("Pi request failed:", error));
+		}
+
 		const shikiScriptUri = ${JSON.stringify(highlighterScriptUri)};
 		const shikiScriptNonce = ${JSON.stringify(scriptNonce)};
 			const emptyStateEl = document.getElementById("emptyState");
@@ -494,13 +520,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function parseToolArgs(tool) {
 			if (!tool?.args) {
-				return undefined;
+				return;
 			}
 			try {
 				const parsed = JSON.parse(tool.args);
 				return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
 			} catch {
-				return undefined;
+				return;
 			}
 		}
 
@@ -642,7 +668,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			link.textContent = text;
 			link.addEventListener("click", (event) => {
 				event.preventDefault();
-				vscode.postMessage({ type: "openFile", path, line, character });
+				notify("openFile", { path, line, character });
 			});
 			parent.appendChild(link);
 		}
@@ -997,7 +1023,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				if (action === "review") {
 					markApprovalReviewed(id);
 				}
-				vscode.postMessage({ type: "approvalResponse", id, action });
+				notify("approvalResponse", { id, action });
 			});
 			return button;
 		}
@@ -1209,7 +1235,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				item.addEventListener("click", () => {
 					setSessionPanelOpen(false);
 					if (session.path && session.path !== activeSessionPath) {
-						vscode.postMessage({ type: "switchSession", path: session.path });
+						notify("switchSession", { path: session.path });
 					}
 				});
 				sessionListEl.appendChild(item);
@@ -1328,13 +1354,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (!text || running) return;
 			inputEl.value = "";
 			resetPromptHistoryNavigation();
-			vscode.postMessage({ type: "send", text });
+			notify("send", { text });
 		}
 
 		sendEl.addEventListener("click", send);
-		stopEl.addEventListener("click", () => vscode.postMessage({ type: "stop" }));
-		newEl.addEventListener("click", () => vscode.postMessage({ type: "new" }));
-		modelStatusEl.addEventListener("click", () => vscode.postMessage({ type: "selectModel" }));
+		stopEl.addEventListener("click", () => notify("stop", {}));
+		newEl.addEventListener("click", () => notify("new", {}));
+		modelStatusEl.addEventListener("click", () => notify("selectModel", {}));
 		reviewAllEl.addEventListener("click", () => {
 			for (const id of approvalData.keys()) {
 				reviewedApprovalIds.add(id);
@@ -1342,14 +1368,14 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			for (const approval of approvalData.values()) {
 				renderApproval(approval);
 			}
-			vscode.postMessage({ type: "approvalBatchResponse", action: "review" });
+			notify("approvalBatchResponse", { action: "review" });
 		});
-		applyAllEl.addEventListener("click", () => vscode.postMessage({ type: "approvalBatchResponse", action: "apply" }));
-		rejectAllEl.addEventListener("click", () => vscode.postMessage({ type: "approvalBatchResponse", action: "reject" }));
+		applyAllEl.addEventListener("click", () => notify("approvalBatchResponse", { action: "apply" }));
+		rejectAllEl.addEventListener("click", () => notify("approvalBatchResponse", { action: "reject" }));
 		modeEl.addEventListener("click", () =>
 			openSelectMenu("mode", modeEl, "Agent", "◇", permissionModeOptions, permissionModeValue, (permissionMode) => {
 				setPermissionMode(permissionMode);
-				vscode.postMessage({ type: "setPermissionMode", permissionMode });
+				notify("setPermissionMode", { permissionMode });
 			}),
 		);
 		approvalModeEl.addEventListener("click", () =>
@@ -1362,7 +1388,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				approvalModeValue,
 				(approvalMode) => {
 					setApprovalMode(approvalMode);
-					vscode.postMessage({ type: "setApprovalMode", approvalMode });
+					notify("setApprovalMode", { approvalMode });
 				},
 			),
 		);
@@ -1419,7 +1445,21 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		inputEl.addEventListener("input", resetPromptHistoryNavigation);
 
 		window.addEventListener("message", (event) => {
-			const message = event.data;
+			const envelope = event.data;
+			if (envelope?.kind === "response") {
+				const pending = pendingRequests.get(envelope.id);
+				if (!pending) return;
+				pendingRequests.delete(envelope.id);
+				window.clearTimeout(pending.timeoutId);
+				if (envelope.ok) {
+					pending.resolve();
+				} else {
+					pending.reject(new Error(envelope.error?.message || "Pi request failed."));
+				}
+				return;
+			}
+			if (envelope?.kind !== "event" || !envelope.event) return;
+			const message = envelope.event;
 			if (message.type === "state") {
 				setState(message);
 			} else if (message.type === "append") {
@@ -1461,5 +1501,5 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 		});
 
-		vscode.postMessage({ type: "ready" });`;
+		notify("ready", {});`;
 }

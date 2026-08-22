@@ -12,13 +12,25 @@ import {
 	type SessionInfo,
 	SessionManager,
 	SettingsManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
+import { isArray, isObject, isString } from "rattail";
 import * as vscode from "vscode";
 import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, ToolMessage } from "./protocol.ts";
 import {
 	type ApplyEditsRequest,
-	createVsCodeToolDefinitions,
+	createApplyEditsToolDefinition,
+	createDefinitionToolDefinition,
+	createDeleteDirectoryToolDefinition,
+	createDeleteFileToolDefinition,
+	createDiagnosticsToolDefinition,
+	createOpenEditorsToolDefinition,
+	createReferencesToolDefinition,
+	createRenameSymbolToolDefinition,
+	createSelectionToolDefinition,
+	createWorkspaceDiagnosticsToolDefinition,
+	createWriteFileToolDefinition,
 	type DeleteDirectoryRequest,
 	type DeleteFileRequest,
 	type RenameSymbolRequest,
@@ -66,39 +78,20 @@ function createId(prefix: string): string {
 	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function contentToText(content: AgentSessionEvent extends never ? never : unknown): string {
-	if (typeof content === "string") {
+function contentToText(content: unknown): string {
+	if (isString(content)) {
 		return content;
 	}
-	if (!Array.isArray(content)) {
+	if (!isArray(content)) {
 		return "";
 	}
 
 	return content
 		.map((part: unknown) => {
-			if (typeof part !== "object" || part === null) {
+			if (!isObject(part)) {
 				return "";
 			}
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "";
-		})
-		.join("");
-}
-
-function messageContentToText(content: unknown): string {
-	if (typeof content === "string") {
-		return content;
-	}
-	if (!Array.isArray(content)) {
-		return "";
-	}
-	return content
-		.map((part: unknown) => {
-			if (typeof part !== "object" || part === null) {
-				return "";
-			}
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "";
+			return part.type === "text" && isString(part.text) ? part.text : "";
 		})
 		.join("");
 }
@@ -108,42 +101,39 @@ function formatToolResultText(event: Extract<AgentSessionEvent, { type: "tool_ex
 }
 
 function formatToolOutput(result: unknown, isError: boolean): string {
-	if (typeof result !== "object" || result === null) {
+	if (!isObject(result)) {
 		return isError ? "Tool failed." : "Tool completed.";
 	}
 
-	const record = result as Record<string, unknown>;
-	const parts: readonly unknown[] = Array.isArray(record.content) ? record.content : [];
+	const parts: readonly unknown[] = isArray(result.content) ? result.content : [];
 	const content = parts
 		.map((part: unknown) => {
-			if (typeof part !== "object" || part === null) {
+			if (!isObject(part)) {
 				return "";
 			}
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "[image]";
+			return part.type === "text" && isString(part.text) ? part.text : "[image]";
 		})
 		.join("\n");
 	return content.trim() || (isError ? "Tool failed." : "Tool completed.");
 }
 
 function formatToolTitle(result: unknown): string | undefined {
-	if (typeof result !== "object" || result === null) {
-		return undefined;
+	if (!isObject(result)) {
+		return;
 	}
-	const record = result as Record<string, unknown>;
-	const details = record.details;
-	if (typeof details !== "object" || details === null) {
-		return undefined;
+	const details = result.details;
+	if (!isObject(details)) {
+		return;
 	}
-	const title = (details as Record<string, unknown>).title;
-	return typeof title === "string" && title.trim() ? title : undefined;
+	const title = details.title;
+	return isString(title) && title.trim() ? title : undefined;
 }
 
 function formatUnknown(value: unknown): string | undefined {
 	if (value === undefined) {
-		return undefined;
+		return;
 	}
-	if (typeof value === "string") {
+	if (isString(value)) {
 		return value;
 	}
 	try {
@@ -166,7 +156,12 @@ function sessionLabel(session: SessionInfo): string {
 }
 
 function sessionDetail(session: SessionInfo): string {
-	return `${session.modified.toISOString()} - ${session.messageCount} messages`;
+	const modifiedDate = [
+		session.modified.getFullYear(),
+		String(session.modified.getMonth() + 1).padStart(2, "0"),
+		String(session.modified.getDate()).padStart(2, "0"),
+	].join("/");
+	return `${modifiedDate} - ${session.messageCount} messages`;
 }
 
 export async function listSessionSummaries(options: ListSessionSummariesOptions): Promise<SessionSummary[]> {
@@ -209,18 +204,18 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 				messages.push({
 					id: entry.id,
 					role: "user",
-					text: messageContentToText(message.content),
+					text: contentToText(message.content),
 				});
 				break;
 			case "assistant":
 				messages.push({
 					id: entry.id,
 					role: message.errorMessage ? "error" : "assistant",
-					text: message.errorMessage ?? messageContentToText(message.content),
+					text: message.errorMessage ?? contentToText(message.content),
 				});
 				break;
 			case "toolResult": {
-				const output = messageContentToText(message.content);
+				const output = contentToText(message.content);
 				messages.push({
 					id: entry.id,
 					role: message.isError ? "error" : "tool",
@@ -252,7 +247,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 					messages.push({
 						id: entry.id,
 						role: "system",
-						text: messageContentToText(message.content),
+						text: contentToText(message.content),
 					});
 				}
 				break;
@@ -268,7 +263,7 @@ const MUTATING_BUILTIN_TOOL_NAMES = ["edit", "write"];
 function getModelStatus(session: AgentSession): ModelStatus | undefined {
 	const model = session.model;
 	if (!model) {
-		return undefined;
+		return;
 	}
 
 	return modelStatusFromModel(
@@ -321,7 +316,7 @@ export class PiAgentService {
 		this.confirmRenameSymbol = options.confirmRenameSymbol;
 	}
 
-	setPermissionMode(permissionMode: PermissionMode): void {
+	setPermissionMode(permissionMode: PermissionMode) {
 		if (this.permissionMode === permissionMode) {
 			return;
 		}
@@ -329,7 +324,7 @@ export class PiAgentService {
 		this.disposeSession();
 	}
 
-	async refreshModelStatus(): Promise<void> {
+	async refreshModelStatus() {
 		const sessionStatus = this.session ? getModelStatus(this.session) : undefined;
 		if (sessionStatus) {
 			this.onEvent({ type: "modelStatus", modelStatus: sessionStatus });
@@ -368,7 +363,7 @@ export class PiAgentService {
 			.sort((a, b) => a.label.localeCompare(b.label));
 	}
 
-	async selectModel(provider: string, modelId: string): Promise<void> {
+	async selectModel(provider: string, modelId: string) {
 		const runtime = await this.ensureModelRuntime();
 		const model = runtime.getModel(provider, modelId);
 		if (!model) {
@@ -385,7 +380,7 @@ export class PiAgentService {
 		this.onEvent({ type: "modelStatus", modelStatus: modelStatusFromModel(model) });
 	}
 
-	async newSession(): Promise<void> {
+	async newSession() {
 		const session = await this.ensureSession();
 		const sessionDir = session.sessionManager.getSessionDir();
 		this.disposeSession();
@@ -393,7 +388,7 @@ export class PiAgentService {
 		await this.ensureSession();
 	}
 
-	async switchSession(path: string): Promise<void> {
+	async switchSession(path: string) {
 		const sessionDir = this.getSessionDir();
 		this.disposeSession();
 		this.sessionManager = SessionManager.open(path, sessionDir, this.cwd);
@@ -413,7 +408,7 @@ export class PiAgentService {
 		return this.sessionManager ? chatMessagesFromEntries(this.sessionManager.buildContextEntries()) : [];
 	}
 
-	async prompt(text: string): Promise<void> {
+	async prompt(text: string) {
 		const session = await this.ensureSession();
 		this.running = true;
 		this.onEvent({ type: "running", running: true });
@@ -433,7 +428,7 @@ export class PiAgentService {
 		}
 	}
 
-	async abort(): Promise<void> {
+	async abort() {
 		if (!this.session || !this.running) {
 			return;
 		}
@@ -442,7 +437,7 @@ export class PiAgentService {
 		this.onEvent({ type: "running", running: false });
 	}
 
-	dispose(): void {
+	dispose() {
 		this.disposeSession();
 	}
 
@@ -487,11 +482,40 @@ export class PiAgentService {
 	private async getConfiguredModelStatus(): Promise<ModelStatus | undefined> {
 		const config = this.getConfiguredDefaultModelConfig();
 		if (!config.defaultProvider || !config.defaultModel) {
-			return undefined;
+			return;
 		}
 		const runtime = await this.ensureModelRuntime();
 		const model = runtime.getModel(config.defaultProvider, config.defaultModel);
 		return model ? modelStatusFromModel(model) : undefined;
+	}
+
+	private createCustomTools(): ToolDefinition[] {
+		const toolOptions = {
+			cwd: this.cwd,
+			confirmApplyEdits: this.confirmApplyEdits,
+			confirmWriteFile: this.confirmWriteFile,
+			confirmDeleteFile: this.confirmDeleteFile,
+			confirmDeleteDirectory: this.confirmDeleteDirectory,
+			confirmRenameSymbol: this.confirmRenameSymbol,
+		};
+		const customTools = [
+			createSelectionToolDefinition(toolOptions),
+			createDiagnosticsToolDefinition(toolOptions),
+			createWorkspaceDiagnosticsToolDefinition(toolOptions),
+			createOpenEditorsToolDefinition(toolOptions),
+			createDefinitionToolDefinition(toolOptions),
+			createReferencesToolDefinition(toolOptions),
+		];
+		if (this.permissionMode === "code") {
+			customTools.push(
+				createApplyEditsToolDefinition(toolOptions),
+				createWriteFileToolDefinition(toolOptions),
+				createDeleteFileToolDefinition(toolOptions),
+				createDeleteDirectoryToolDefinition(toolOptions),
+				createRenameSymbolToolDefinition(toolOptions),
+			);
+		}
+		return customTools;
 	}
 
 	private async ensureSession(): Promise<AgentSession> {
@@ -499,17 +523,7 @@ export class PiAgentService {
 			return this.session;
 		}
 
-		const customTools = createVsCodeToolDefinitions(
-			{
-				cwd: this.cwd,
-				confirmApplyEdits: this.confirmApplyEdits,
-				confirmWriteFile: this.confirmWriteFile,
-				confirmDeleteFile: this.confirmDeleteFile,
-				confirmDeleteDirectory: this.confirmDeleteDirectory,
-				confirmRenameSymbol: this.confirmRenameSymbol,
-			},
-			this.permissionMode,
-		);
+		const customTools = this.createCustomTools();
 		const agentDir = this.agentDir ? resolve(this.agentDir) : getAgentDir();
 		const settingsManager = this.createSessionSettingsManager();
 		const modelRuntime = await this.ensureModelRuntime();
@@ -553,9 +567,6 @@ export class PiAgentService {
 		this.sessionManager = result.session.sessionManager;
 		this.unsubscribe = result.session.subscribe((event) => this.handleSessionEvent(event));
 		this.emitModelStatus();
-		for (const diagnostic of result.session.modelRuntime ? [] : []) {
-			console.warn(diagnostic);
-		}
 		if (result.modelFallbackMessage) {
 			this.onEvent({
 				type: "append",
@@ -615,7 +626,7 @@ export class PiAgentService {
 		return [];
 	}
 
-	private disposeSession(): void {
+	private disposeSession() {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.session?.dispose();
@@ -628,7 +639,7 @@ export class PiAgentService {
 		this.emitModelStatus();
 	}
 
-	private handleSessionEvent(event: AgentSessionEvent): void {
+	private handleSessionEvent(event: AgentSessionEvent) {
 		switch (event.type) {
 			case "message_start": {
 				if (event.message.role === "assistant") {
@@ -763,7 +774,7 @@ export class PiAgentService {
 		}
 	}
 
-	private emitModelStatus(): void {
+	private emitModelStatus() {
 		const session = this.session;
 		if (session) {
 			this.onEvent({ type: "modelStatus", modelStatus: getModelStatus(session) });

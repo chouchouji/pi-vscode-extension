@@ -2,7 +2,6 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { readFileOrError } from "./file-utils.ts";
 import { errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
@@ -21,9 +20,13 @@ export function createDeleteFileToolDefinition(options: VsCodeToolOptions): Tool
 		}),
 		execute: async (_toolCallId, params) => {
 			const uri = resolveFileUri(options.cwd, params.path);
-			const existing = await readFileOrError(uri);
-			if (typeof existing === "string") {
-				return errorResult(existing, "delete file");
+			try {
+				const stat = await vscode.workspace.fs.stat(uri);
+				if (stat.type !== vscode.FileType.File) {
+					return errorResult("Path exists but is not a file.", "delete file");
+				}
+			} catch {
+				return errorResult("Path does not exist.", "delete file");
 			}
 
 			const approved = await options.confirmDeleteFile({ filePath: uri.fsPath });

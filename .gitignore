@@ -3,4 +3,6 @@ dist/
 packages/*/dist/
 .artifacts/
 *.vsix
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 

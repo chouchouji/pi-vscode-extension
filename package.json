@@ -9,6 +9,9 @@
 		"clean": "npm run clean --workspaces",
 		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build && cd ../mcp-adapter && npm run build && cd ../vscode-extension && npm run build",
 		"build:offline": "cd packages/tui && npm run build && cd ../ai && npm run build:offline && cd ../agent && npm run build && cd ../coding-agent && npm run build && cd ../mcp-adapter && npm run build && cd ../vscode-extension && npm run build",
+		"docs:dev": "vitepress dev docs",
+		"docs:build": "vitepress build docs",
+		"docs:preview": "vitepress preview docs",
 		"check": "biome check --write --error-on-warnings . && npm run check:pinned-deps && npm run check:ts-imports && tsgo --noEmit",
 		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",
 		"check:ts-imports": "node scripts/check-ts-relative-imports.mjs",
@@ -38,7 +41,8 @@
 		"jiti": "2.7.0",
 		"shx": "0.4.0",
 		"tsx": "4.22.1",
-		"typescript": "5.9.3"
+		"typescript": "5.9.3",
+		"vitepress": "1.6.4"
 	},
 	"engines": {
 		"node": ">=22.19.0"

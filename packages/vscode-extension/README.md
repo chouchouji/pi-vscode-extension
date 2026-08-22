@@ -54,9 +54,54 @@ Pi Code Agent 是一个 VS Code AI 编程助手插件。你可以在编辑器侧
 
 建议在应用修改前先查看变更内容。
 
+## 思考中继续输入
+
+Pi 处理上一次消息时可以直接输入新的消息，消息会进入队列而不会丢失：
+
+- `Cmd+Enter`（macOS）或 `Ctrl+Enter`（Windows/Linux）发送 **steer**：在当前回复的工具调用完成后、下一次回复前插入。适合打断当前思路、调整方向。
+- `Alt+Enter` 发送 **follow-up**：等 Pi 完成当前回复后再投递。适合补充后续要求。
+
+排队的消息会显示在输入框上方（steer 蓝色、follow-up 紫色）。点击 `Restore` 可以把排队内容恢复到输入框；点击停止按钮会停止当前回复，并把排队内容恢复到输入框。
+
+> 未运行时两种按键行为一致，与普通发送相同。
+
 ## 历史会话
 
 点击聊天视图标题栏的历史按钮，或运行 `Pi: Chat History`，可以查看最近会话并切换到旧会话。
+
+## MCP 服务器
+
+插件支持通过 MCP 扩展 Pi 的工具能力（例如 GitHub、Context7 等）。在工作区根目录创建 `.mcp.json` 即可配置，例如接入 GitHub 官方 MCP 服务器：
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "github-mcp-server"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx"
+      }
+    }
+  }
+}
+
+```
+
+MCP 服务器默认懒启动：Pi 第一次调用相关工具时才拉起进程，配置后新开会话即可生效。也可以使用 GitHub Copilot 的 MCP 端点：
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp",
+      "auth": "oauth",
+      "protocolVersion": "auto"
+    }
+  }
+}
+
+```
 
 ## 配置项
 

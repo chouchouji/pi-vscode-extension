@@ -12,13 +12,25 @@ import {
 	type SessionInfo,
 	SessionManager,
 	SettingsManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
+import { isArray, isObject, isString } from "rattail";
 import * as vscode from "vscode";
 import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, ToolMessage } from "./protocol.ts";
 import {
 	type ApplyEditsRequest,
-	createVsCodeToolDefinitions,
+	createApplyEditsToolDefinition,
+	createDefinitionToolDefinition,
+	createDeleteDirectoryToolDefinition,
+	createDeleteFileToolDefinition,
+	createDiagnosticsToolDefinition,
+	createOpenEditorsToolDefinition,
+	createReferencesToolDefinition,
+	createRenameSymbolToolDefinition,
+	createSelectionToolDefinition,
+	createWorkspaceDiagnosticsToolDefinition,
+	createWriteFileToolDefinition,
 	type DeleteDirectoryRequest,
 	type DeleteFileRequest,
 	type RenameSymbolRequest,
@@ -67,38 +79,36 @@ function createId(prefix: string): string {
 }
 
 function contentToText(content: AgentSessionEvent extends never ? never : unknown): string {
-	if (typeof content === "string") {
+	if (isString(content)) {
 		return content;
 	}
-	if (!Array.isArray(content)) {
+	if (!isArray(content)) {
 		return "";
 	}
 
 	return content
 		.map((part: unknown) => {
-			if (typeof part !== "object" || part === null) {
+			if (!isObject(part)) {
 				return "";
 			}
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "";
+			return part.type === "text" && isString(part.text) ? part.text : "";
 		})
 		.join("");
 }
 
 function messageContentToText(content: unknown): string {
-	if (typeof content === "string") {
+	if (isString(content)) {
 		return content;
 	}
-	if (!Array.isArray(content)) {
+	if (!isArray(content)) {
 		return "";
 	}
 	return content
 		.map((part: unknown) => {
-			if (typeof part !== "object" || part === null) {
+			if (!isObject(part)) {
 				return "";
 			}
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "";
+			return part.type === "text" && isString(part.text) ? part.text : "";
 		})
 		.join("");
 }
@@ -108,42 +118,39 @@ function formatToolResultText(event: Extract<AgentSessionEvent, { type: "tool_ex
 }
 
 function formatToolOutput(result: unknown, isError: boolean): string {
-	if (typeof result !== "object" || result === null) {
+	if (!isObject(result)) {
 		return isError ? "Tool failed." : "Tool completed.";
 	}
 
-	const record = result as Record<string, unknown>;
-	const parts: readonly unknown[] = Array.isArray(record.content) ? record.content : [];
+	const parts: readonly unknown[] = isArray(result.content) ? result.content : [];
 	const content = parts
 		.map((part: unknown) => {
-			if (typeof part !== "object" || part === null) {
+			if (!isObject(part)) {
 				return "";
 			}
-			const record = part as Record<string, unknown>;
-			return record.type === "text" && typeof record.text === "string" ? record.text : "[image]";
+			return part.type === "text" && isString(part.text) ? part.text : "[image]";
 		})
 		.join("\n");
 	return content.trim() || (isError ? "Tool failed." : "Tool completed.");
 }
 
 function formatToolTitle(result: unknown): string | undefined {
-	if (typeof result !== "object" || result === null) {
+	if (!isObject(result)) {
 		return undefined;
 	}
-	const record = result as Record<string, unknown>;
-	const details = record.details;
-	if (typeof details !== "object" || details === null) {
+	const details = result.details;
+	if (!isObject(details)) {
 		return undefined;
 	}
-	const title = (details as Record<string, unknown>).title;
-	return typeof title === "string" && title.trim() ? title : undefined;
+	const title = details.title;
+	return isString(title) && title.trim() ? title : undefined;
 }
 
 function formatUnknown(value: unknown): string | undefined {
 	if (value === undefined) {
 		return undefined;
 	}
-	if (typeof value === "string") {
+	if (isString(value)) {
 		return value;
 	}
 	try {
@@ -494,22 +501,41 @@ export class PiAgentService {
 		return model ? modelStatusFromModel(model) : undefined;
 	}
 
+	private createCustomTools(): ToolDefinition[] {
+		const toolOptions = {
+			cwd: this.cwd,
+			confirmApplyEdits: this.confirmApplyEdits,
+			confirmWriteFile: this.confirmWriteFile,
+			confirmDeleteFile: this.confirmDeleteFile,
+			confirmDeleteDirectory: this.confirmDeleteDirectory,
+			confirmRenameSymbol: this.confirmRenameSymbol,
+		};
+		const customTools = [
+			createSelectionToolDefinition(toolOptions),
+			createDiagnosticsToolDefinition(toolOptions),
+			createWorkspaceDiagnosticsToolDefinition(toolOptions),
+			createOpenEditorsToolDefinition(toolOptions),
+			createDefinitionToolDefinition(toolOptions),
+			createReferencesToolDefinition(toolOptions),
+		];
+		if (this.permissionMode === "code") {
+			customTools.push(
+				createApplyEditsToolDefinition(toolOptions),
+				createWriteFileToolDefinition(toolOptions),
+				createDeleteFileToolDefinition(toolOptions),
+				createDeleteDirectoryToolDefinition(toolOptions),
+				createRenameSymbolToolDefinition(toolOptions),
+			);
+		}
+		return customTools;
+	}
+
 	private async ensureSession(): Promise<AgentSession> {
 		if (this.session) {
 			return this.session;
 		}
 
-		const customTools = createVsCodeToolDefinitions(
-			{
-				cwd: this.cwd,
-				confirmApplyEdits: this.confirmApplyEdits,
-				confirmWriteFile: this.confirmWriteFile,
-				confirmDeleteFile: this.confirmDeleteFile,
-				confirmDeleteDirectory: this.confirmDeleteDirectory,
-				confirmRenameSymbol: this.confirmRenameSymbol,
-			},
-			this.permissionMode,
-		);
+		const customTools = this.createCustomTools();
 		const agentDir = this.agentDir ? resolve(this.agentDir) : getAgentDir();
 		const settingsManager = this.createSessionSettingsManager();
 		const modelRuntime = await this.ensureModelRuntime();

@@ -1,3 +1,5 @@
+import { isNumber, isObject, isString } from "rattail";
+
 export type PermissionMode = "ask" | "plan" | "code";
 export type ApprovalMode = "ask" | "auto";
 
@@ -79,11 +81,11 @@ export type WebviewToHostMessage =
 	| { type: "openFile"; path: string; line?: number; character?: number };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+	return isObject(value);
 }
 
 export function parseWebviewMessage(value: unknown): WebviewToHostMessage | undefined {
-	if (!isRecord(value) || typeof value.type !== "string") {
+	if (!isRecord(value) || !isString(value.type)) {
 		return undefined;
 	}
 
@@ -91,11 +93,11 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
 		return { type: value.type };
 	}
 
-	if (value.type === "send" && typeof value.text === "string") {
+	if (value.type === "send" && isString(value.text)) {
 		return { type: "send", text: value.text };
 	}
 
-	if (value.type === "switchSession" && typeof value.path === "string") {
+	if (value.type === "switchSession" && isString(value.path)) {
 		return { type: "switchSession", path: value.path };
 	}
 
@@ -112,7 +114,7 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
 
 	if (
 		value.type === "approvalResponse" &&
-		typeof value.id === "string" &&
+		isString(value.id) &&
 		(value.action === "review" || value.action === "apply" || value.action === "reject")
 	) {
 		return { type: "approvalResponse", id: value.id, action: value.action };
@@ -125,10 +127,9 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
 		return { type: "approvalBatchResponse", action: value.action };
 	}
 
-	if (value.type === "openFile" && typeof value.path === "string") {
-		const line = typeof value.line === "number" && Number.isFinite(value.line) ? value.line : undefined;
-		const character =
-			typeof value.character === "number" && Number.isFinite(value.character) ? value.character : undefined;
+	if (value.type === "openFile" && isString(value.path)) {
+		const line = isNumber(value.line) && Number.isFinite(value.line) ? value.line : undefined;
+		const character = isNumber(value.character) && Number.isFinite(value.character) ? value.character : undefined;
 		return { type: "openFile", path: value.path, line, character };
 	}
 

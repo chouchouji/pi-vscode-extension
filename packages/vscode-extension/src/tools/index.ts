@@ -1,18 +1,12 @@
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { PermissionMode } from "../protocol.ts";
-import { createApplyEditsToolDefinition } from "./apply-edits.ts";
-import { createDefinitionToolDefinition } from "./definition.ts";
-import { createDeleteDirectoryToolDefinition } from "./delete-directory.ts";
-import { createDeleteFileToolDefinition } from "./delete-file.ts";
-import { createDiagnosticsToolDefinition } from "./diagnostics.ts";
-import { createOpenEditorsToolDefinition } from "./open-editors.ts";
-import { createReferencesToolDefinition } from "./references.ts";
-import { createRenameSymbolToolDefinition } from "./rename-symbol.ts";
-import { createSelectionToolDefinition } from "./selection.ts";
-import type { VsCodeToolOptions } from "./types.ts";
-import { createWorkspaceDiagnosticsToolDefinition } from "./workspace-diagnostics.ts";
-import { createWriteFileToolDefinition } from "./write-file.ts";
-
+export { createApplyEditsToolDefinition } from "./apply-edits.ts";
+export { createDefinitionToolDefinition } from "./definition.ts";
+export { createDeleteDirectoryToolDefinition } from "./delete-directory.ts";
+export { createDeleteFileToolDefinition } from "./delete-file.ts";
+export { createDiagnosticsToolDefinition } from "./diagnostics.ts";
+export { createOpenEditorsToolDefinition } from "./open-editors.ts";
+export { createReferencesToolDefinition } from "./references.ts";
+export { createRenameSymbolToolDefinition } from "./rename-symbol.ts";
+export { createSelectionToolDefinition } from "./selection.ts";
 export type {
 	ApplyEditReviewFile,
 	ApplyEditsRequest,
@@ -22,26 +16,5 @@ export type {
 	VsCodeToolOptions,
 	WriteFileRequest,
 } from "./types.ts";
-
-export function createVsCodeToolDefinitions(options: VsCodeToolOptions, mode: PermissionMode): ToolDefinition[] {
-	const tools: ToolDefinition[] = [
-		createSelectionToolDefinition(options),
-		createDiagnosticsToolDefinition(options),
-		createWorkspaceDiagnosticsToolDefinition(options),
-		createOpenEditorsToolDefinition(options),
-		createDefinitionToolDefinition(options),
-		createReferencesToolDefinition(options),
-	];
-
-	if (mode === "code") {
-		tools.push(
-			createApplyEditsToolDefinition(options),
-			createWriteFileToolDefinition(options),
-			createDeleteFileToolDefinition(options),
-			createDeleteDirectoryToolDefinition(options),
-			createRenameSymbolToolDefinition(options),
-		);
-	}
-
-	return tools;
-}
+export { createWorkspaceDiagnosticsToolDefinition } from "./workspace-diagnostics.ts";
+export { createWriteFileToolDefinition } from "./write-file.ts";

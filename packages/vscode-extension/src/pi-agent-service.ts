@@ -274,7 +274,7 @@ function getModelStatus(session: AgentSession): ModelStatus | undefined {
 
 function modelStatusFromModel(model: RuntimeModel, suffix?: string): ModelStatus {
 	return {
-		label: `${model.provider}/${model.name || model.id}`,
+		label: model.name || model.id,
 		detail: [model.provider, model.id].join("/").concat(suffix ? `, ${suffix}` : ""),
 	};
 }

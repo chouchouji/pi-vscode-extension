@@ -7,6 +7,10 @@
 - Replaced the in-webview chat history panel with a native QuickPick for switching sessions.
 - Improved webview rendering with batched streaming updates, collapsible long code blocks, and truncated tool output previews with a "Show full output" toggle.
 
+### Changed
+
+- Shortened the model status label in the chat composer to show the model name only; the full provider/model path remains available on hover.
+
 ## [0.0.4] - 2026-08-21
 
 ### Added

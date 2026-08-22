@@ -1,14 +1,6 @@
 export function getWebviewBody(): string {
 	return `	<div id="app">
 		<div class="content">
-			<div id="sessionPanel" class="session-panel" hidden>
-				<div class="session-panel-header">
-					<span>Chat history</span>
-					<button id="sessionPanelClose" class="close-button" type="button" title="Close">×</button>
-				</div>
-				<input id="sessionSearch" class="session-search" type="search" placeholder="Search chats">
-				<div id="sessionList" class="session-list"></div>
-			</div>
 			<div id="emptyState" class="empty-state">
 				<div class="empty-mark">Pi</div>
 				<div class="empty-title">Build with Pi</div>

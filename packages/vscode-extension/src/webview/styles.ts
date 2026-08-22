@@ -414,6 +414,23 @@ export function getWebviewStyles(): string {
 		.code-header + pre {
 			margin-top: 0;
 		}
+		.code-section {
+			margin: 8px 0;
+			border: 1px solid var(--vscode-panel-border);
+			background: var(--vscode-textCodeBlock-background);
+		}
+		.code-section > summary {
+			cursor: pointer;
+		}
+		.code-section .code-header {
+			margin: 0;
+			border: 0;
+		}
+		.code-section > pre {
+			margin: 0;
+			border: 0;
+			border-top: 1px solid var(--vscode-panel-border);
+		}
 		.copy-code {
 			color: var(--vscode-button-secondaryForeground);
 			background: var(--vscode-button-secondaryBackground);

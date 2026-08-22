@@ -45,18 +45,20 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const approvalModeLabelEl = document.getElementById("approvalModeLabel");
 		const selectMenuEl = document.getElementById("selectMenu");
 		const modelStatusEl = document.getElementById("modelStatus");
-		const sessionPanelEl = document.getElementById("sessionPanel");
-		const sessionPanelCloseEl = document.getElementById("sessionPanelClose");
-		const sessionSearchEl = document.getElementById("sessionSearch");
-		const sessionListEl = document.getElementById("sessionList");
+		const messageRenderDelayMs = 60;
+		const codeBlockPreviewLines = 24;
+		const toolOutputPreviewHeadLines = 20;
+		const toolOutputPreviewTailLines = 0;
+		const toolOutputPreviewMaxChars = 120000;
 		const messageEls = new Map();
 		const messageData = new Map();
+		const streamingMessageState = new Map();
+		const pendingMessageRenderIds = new Set();
 		const approvalEls = new Map();
 		const approvalData = new Map();
 		const reviewedApprovalIds = new Set();
-		let sessionsState = [];
+		let pendingMessageRenderTimer;
 		let running = false;
-		let activeSessionPath = "";
 		let permissionModeValue = "code";
 		let approvalModeValue = "ask";
 		let openSelectKind = "";
@@ -626,39 +628,58 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (!code.trim()) {
 				return;
 			}
-			if (language) {
+			const lineCount = code.split("\\n").length;
+			const isLong = lineCount > codeBlockPreviewLines;
+			const container = isLong ? document.createElement("details") : parent;
+			if (isLong) {
+				container.className = "code-section";
+			}
+			if (language || isLong) {
 				const header = document.createElement("div");
 				header.className = "code-header";
 				const label = document.createElement("span");
-				label.textContent = language;
+				label.textContent = (language || "Code") + " · " + lineCount + " lines";
 				header.appendChild(label);
-				const copy = document.createElement("button");
-				copy.type = "button";
-				copy.className = "copy-code";
-				copy.textContent = "Copy";
-				copy.addEventListener("click", async () => {
-					try {
-						await navigator.clipboard.writeText(code);
-						copy.textContent = "Copied";
-						setTimeout(() => {
-							copy.textContent = "Copy";
-						}, 1200);
-					} catch {
-						copy.textContent = "Failed";
-						setTimeout(() => {
-							copy.textContent = "Copy";
-						}, 1200);
-					}
-				});
-				header.appendChild(copy);
-				parent.appendChild(header);
+				if (language) {
+					const copy = document.createElement("button");
+					copy.type = "button";
+					copy.className = "copy-code";
+					copy.textContent = "Copy";
+					copy.addEventListener("click", async (event) => {
+						event.preventDefault();
+						event.stopPropagation();
+						try {
+							await navigator.clipboard.writeText(code);
+							copy.textContent = "Copied";
+							setTimeout(() => {
+								copy.textContent = "Copy";
+							}, 1200);
+						} catch {
+							copy.textContent = "Failed";
+							setTimeout(() => {
+								copy.textContent = "Copy";
+							}, 1200);
+						}
+					});
+					header.appendChild(copy);
+				}
+				if (isLong) {
+					const summary = document.createElement("summary");
+					summary.appendChild(header);
+					container.appendChild(summary);
+				} else {
+					container.appendChild(header);
+				}
 			}
 			const pre = document.createElement("pre");
 			const codeEl = document.createElement("code");
 			appendHighlightedCode(codeEl, code, language);
 			pre.appendChild(codeEl);
-			parent.appendChild(pre);
+			container.appendChild(pre);
 			upgradeCodeBlock(pre, code, language);
+			if (isLong) {
+				parent.appendChild(container);
+			}
 		}
 
 		function appendFileLink(parent, text, path, line, character) {
@@ -842,11 +863,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function appendPre(parent, label, text, isOutput, language, options) {
 			const cleanText = stripAnsi(text);
+			const preview = options?.preview;
+			const initialText = preview?.text || cleanText;
 			const showLabel = !options?.hideLabel;
-			const section = document.createElement(showLabel && cleanText.length > 1200 ? "details" : "div");
+			const isLong = cleanText.split("\\n").length > codeBlockPreviewLines || Boolean(preview?.isTruncated);
+			const section = document.createElement(showLabel && isLong ? "details" : "div");
 			section.className = "tool-section";
 			if (showLabel && section.tagName === "DETAILS") {
-				section.open = true;
 				const summary = document.createElement("summary");
 				summary.className = "tool-section-label";
 				summary.textContent = label;
@@ -856,17 +879,66 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 			const pre = document.createElement("pre");
 			pre.className = isOutput ? "tool-pre tool-output" : "tool-pre";
-			if (language || shouldRenderAsDiff(cleanText)) {
+			if (language || shouldRenderAsDiff(initialText)) {
 				const resolvedLanguage = language || "diff";
 				const codeEl = document.createElement("code");
-				appendHighlightedCode(codeEl, cleanText, resolvedLanguage);
+				appendHighlightedCode(codeEl, initialText, resolvedLanguage);
 				pre.appendChild(codeEl);
-				upgradeCodeBlock(pre, cleanText, resolvedLanguage);
+				if (!options?.skipShiki) {
+					upgradeCodeBlock(pre, initialText, resolvedLanguage);
+				}
 			} else {
-				pre.textContent = cleanText;
+				pre.textContent = initialText;
 			}
 			section.appendChild(pre);
+			if (preview?.isTruncated) {
+				const toggle = document.createElement("button");
+				toggle.type = "button";
+				toggle.className = "secondary";
+				toggle.textContent = preview.hiddenLines > 0
+					? "Show full output (" + preview.hiddenLines + " lines hidden)"
+					: "Show full output";
+				toggle.addEventListener("click", () => {
+					toggle.remove();
+					pre.textContent = "";
+					if (language || shouldRenderAsDiff(cleanText)) {
+						const resolvedLanguage = language || "diff";
+						const codeEl = document.createElement("code");
+						appendHighlightedCode(codeEl, cleanText, resolvedLanguage);
+						pre.appendChild(codeEl);
+					} else {
+						pre.textContent = cleanText;
+					}
+				});
+				section.appendChild(toggle);
+			}
 			parent.appendChild(section);
+		}
+
+		function createToolOutputPreview(text) {
+			if (!text) {
+				return { text: "", isTruncated: false, hiddenLines: 0 };
+			}
+			const lines = text.split("\\n");
+			if (lines.length <= toolOutputPreviewHeadLines + toolOutputPreviewTailLines && text.length <= toolOutputPreviewMaxChars) {
+				return { text, isTruncated: false, hiddenLines: 0 };
+			}
+
+			const head = lines.slice(0, toolOutputPreviewHeadLines);
+			const tail = toolOutputPreviewTailLines > 0 ? lines.slice(-toolOutputPreviewTailLines) : [];
+			const hiddenLines = Math.max(0, lines.length - head.length - tail.length);
+			const marker = "... (" + hiddenLines + " lines omitted) ...";
+			let previewText = head.concat(hiddenLines > 0 ? [marker] : [], tail).join("\\n");
+
+			if (previewText.length > toolOutputPreviewMaxChars) {
+				previewText = previewText.slice(0, toolOutputPreviewMaxChars).trimEnd().concat("\\n... (output truncated) ...");
+			}
+
+			return {
+				text: previewText,
+				isTruncated: true,
+				hiddenLines,
+			};
 		}
 
 		function appendToolTextOutput(parent, text) {
@@ -908,6 +980,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function renderToolOutput(el, tool, output) {
 			const cleanOutput = stripAnsi(output);
+			const preview = ["read", "grep", "bash"].includes(tool.name) ? createToolOutputPreview(cleanOutput) : undefined;
 			if (shouldRenderResultLine(tool, cleanOutput)) {
 				appendToolResult(el, cleanOutput);
 				return;
@@ -917,16 +990,26 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				return;
 			}
 			if (tool.name === "grep") {
-				appendPre(el, "Output", cleanOutput, true, "grep", { hideLabel: true });
+				appendPre(el, "Output", cleanOutput, true, "grep", {
+					hideLabel: true,
+					preview,
+					skipShiki: Boolean(preview?.isTruncated),
+				});
 				return;
 			}
 			if (tool.name === "bash") {
-				appendPre(el, "Output", cleanOutput, true, "", { hideLabel: true });
+				appendPre(el, "Output", cleanOutput, true, "", {
+					hideLabel: true,
+					preview,
+					skipShiki: Boolean(preview?.isTruncated),
+				});
 				return;
 			}
 			const language = inferCodeLanguage(cleanOutput, tool);
 			appendPre(el, "Output", cleanOutput, true, language, {
 				hideLabel: tool.name === "read" && Boolean(language),
+				preview,
+				skipShiki: Boolean(preview?.isTruncated),
 			});
 		}
 
@@ -961,11 +1044,76 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (el) el.remove();
 			messageEls.delete(id);
 			messageData.delete(id);
+			streamingMessageState.delete(id);
 			updateEmptyState();
 		}
 
 		function shouldHideMessage(message) {
 			return message.role === "assistant" && !message.working && !message.tool && !(message.text || "").trim();
+		}
+
+		function flushPendingMessageRenders() {
+			pendingMessageRenderTimer = undefined;
+			if (pendingMessageRenderIds.size === 0) {
+				return;
+			}
+			const ids = Array.from(pendingMessageRenderIds);
+			pendingMessageRenderIds.clear();
+			for (const id of ids) {
+				const message = messageData.get(id);
+				if (message) {
+					renderMessage(message);
+				}
+			}
+			messagesEl.scrollTop = messagesEl.scrollHeight;
+		}
+
+		function queueMessageRender(id) {
+			if (!id) {
+				return;
+			}
+			pendingMessageRenderIds.add(id);
+			if (pendingMessageRenderTimer !== undefined) {
+				return;
+			}
+			pendingMessageRenderTimer = window.setTimeout(flushPendingMessageRenders, messageRenderDelayMs);
+		}
+
+		function isStreamingAssistantMessage(message) {
+			return message.role === "assistant" && !message.tool && message.working;
+		}
+
+		function renderStreamingAssistantMessage(el, message) {
+			const text = message.text || "";
+			let state = streamingMessageState.get(message.id);
+			if (!state || !el.contains(state.container)) {
+				const container = document.createElement("div");
+				container.className = "message-content";
+				const paragraph = document.createElement("p");
+				container.appendChild(paragraph);
+				el.textContent = "";
+				el.appendChild(container);
+				state = { container, paragraph, renderedText: "" };
+				streamingMessageState.set(message.id, state);
+			}
+
+			if (!text) {
+				state.paragraph.textContent = message.working ? "..." : "";
+				state.renderedText = "";
+				return;
+			}
+
+			if (text.startsWith(state.renderedText)) {
+				const delta = text.slice(state.renderedText.length);
+				if (!state.renderedText) {
+					state.paragraph.textContent = text;
+				} else if (delta) {
+					state.paragraph.textContent = (state.paragraph.textContent || "") + delta;
+				}
+			} else {
+				state.paragraph.textContent = text;
+			}
+			state.renderedText = text;
 		}
 
 		function renderMessage(message) {
@@ -982,13 +1130,17 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 			el.dataset.role = message.role;
 			el.className = ["message", message.role].join(" ");
-			el.textContent = "";
 			if (message.tool) {
+				streamingMessageState.delete(message.id);
+				el.textContent = "";
 				renderToolMessage(el, message);
+			} else if (isStreamingAssistantMessage(message)) {
+				renderStreamingAssistantMessage(el, message);
 			} else {
+				streamingMessageState.delete(message.id);
+				el.textContent = "";
 				appendMarkdown(el, message.text || (message.working ? "..." : ""));
 			}
-			messagesEl.scrollTop = messagesEl.scrollHeight;
 			updateEmptyState();
 		}
 
@@ -1126,15 +1278,6 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			emptyStateEl.hidden = messageEls.size > 0;
 		}
 
-		function setSessionPanelOpen(open) {
-			sessionPanelEl.hidden = !open;
-			if (open) closeSelectMenu();
-			if (open) {
-				sessionSearchEl.focus();
-				sessionSearchEl.select();
-			}
-		}
-
 		function closeSelectMenu() {
 			openSelectKind = "";
 			selectMenuEl.hidden = true;
@@ -1147,7 +1290,6 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				closeSelectMenu();
 				return;
 			}
-			setSessionPanelOpen(false);
 			openSelectKind = kind;
 			selectMenuEl.textContent = "";
 			const header = document.createElement("div");
@@ -1200,52 +1342,6 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 			anchor.setAttribute("aria-expanded", "true");
 			selectMenuEl.querySelector(".select-option.active, .select-option")?.focus();
-		}
-
-		function renderSessionList() {
-			sessionListEl.textContent = "";
-			const query = sessionSearchEl.value.trim().toLowerCase();
-			const sessions = query
-				? sessionsState.filter((session) =>
-						[session.label, session.detail].some((value) => value.toLowerCase().includes(query)),
-					)
-				: sessionsState;
-			if (sessions.length === 0) {
-				const empty = document.createElement("div");
-				empty.className = "session-empty";
-				empty.textContent = query ? "No matching chats" : "No chat history";
-				sessionListEl.appendChild(empty);
-				return;
-			}
-			for (const session of sessions) {
-				const item = document.createElement("button");
-				item.type = "button";
-				item.className = ["session-item", session.path === activeSessionPath ? "active" : ""]
-					.filter(Boolean)
-					.join(" ");
-				item.title = session.detail;
-				const title = document.createElement("div");
-				title.className = "session-item-title";
-				title.textContent = session.active ? "Current: ".concat(session.label) : session.label;
-				const detail = document.createElement("div");
-				detail.className = "session-item-detail";
-				detail.textContent = session.detail;
-				item.appendChild(title);
-				item.appendChild(detail);
-				item.addEventListener("click", () => {
-					setSessionPanelOpen(false);
-					if (session.path && session.path !== activeSessionPath) {
-						notify("switchSession", { path: session.path });
-					}
-				});
-				sessionListEl.appendChild(item);
-			}
-		}
-
-		function setSessions(sessions, activePath) {
-			activeSessionPath = activePath || "";
-			sessionsState = Array.isArray(sessions) ? sessions : [];
-			renderSessionList();
 		}
 
 		function resetPromptHistoryNavigation() {
@@ -1325,10 +1421,16 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		}
 
 		function setState(state) {
+			if (pendingMessageRenderTimer !== undefined) {
+				window.clearTimeout(pendingMessageRenderTimer);
+				pendingMessageRenderTimer = undefined;
+			}
+			pendingMessageRenderIds.clear();
 			messagesEl.textContent = "";
 			approvalsEl.textContent = "";
 			messageEls.clear();
 			messageData.clear();
+			streamingMessageState.clear();
 			approvalEls.clear();
 			approvalData.clear();
 			const activeApprovalIds = new Set(state.approvals.map((approval) => approval.id));
@@ -1345,8 +1447,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			setPermissionMode(state.permissionMode);
 			setApprovalMode(state.approvalMode);
 			setModelStatus(state.modelStatus);
-			setSessions(state.sessions, state.activeSessionPath);
 			setRunning(state.running);
+			messagesEl.scrollTop = messagesEl.scrollHeight;
 		}
 
 		function send() {
@@ -1392,15 +1494,6 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				},
 			),
 		);
-		sessionPanelCloseEl.addEventListener("click", () => setSessionPanelOpen(false));
-		sessionSearchEl.addEventListener("input", renderSessionList);
-		sessionSearchEl.addEventListener("keydown", (event) => {
-			if (event.key === "Escape") {
-				event.preventDefault();
-				setSessionPanelOpen(false);
-				sessionHistoryEl.focus();
-			}
-		});
 		selectMenuEl.addEventListener("keydown", (event) => {
 			if (event.key === "Escape") {
 				event.preventDefault();
@@ -1415,16 +1508,9 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (!selectMenuEl.hidden && !selectMenuEl.contains(target) && !modeEl.contains(target) && !approvalModeEl.contains(target)) {
 				closeSelectMenu();
 			}
-			if (
-				!sessionPanelEl.hidden &&
-				!sessionPanelEl.contains(target)
-			) {
-				setSessionPanelOpen(false);
-			}
 		});
 		window.addEventListener("resize", () => {
 			closeSelectMenu();
-			setSessionPanelOpen(false);
 		});
 		inputEl.addEventListener("keydown", (event) => {
 			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -1464,30 +1550,30 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				setState(message);
 			} else if (message.type === "append") {
 				appendUserPromptToHistory(message.message);
-				renderMessage(message.message);
+				messageData.set(message.message.id, message.message);
+				queueMessageRender(message.message.id);
 			} else if (message.type === "appendDelta") {
 				const existing = messageData.get(message.id);
 				if (existing) {
 					existing.text += message.delta;
-					renderMessage(existing);
+					queueMessageRender(existing.id);
 				}
-				messagesEl.scrollTop = messagesEl.scrollHeight;
 			} else if (message.type === "replace") {
 				const el = messageEls.get(message.id);
 				const role = message.role || (el ? el.dataset.role : undefined) || "assistant";
-				renderMessage({
+				const replacedMessage = {
 					id: message.id,
 					role,
 					text: message.text || "",
 					working: message.working,
 					tool: message.tool,
-				});
+				};
+				messageData.set(replacedMessage.id, replacedMessage);
+				queueMessageRender(replacedMessage.id);
 			} else if (message.type === "running") {
 				setRunning(message.running);
 			} else if (message.type === "modelStatus") {
 				setModelStatus(message.modelStatus);
-			} else if (message.type === "sessions") {
-				setSessions(message.sessions, message.activeSessionPath);
 			} else if (message.type === "approvalRequested") {
 				renderApproval(message.approval);
 			} else if (message.type === "approvalResolved") {
@@ -1496,8 +1582,6 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				inputEl.value = message.text;
 				resetPromptHistoryNavigation();
 				inputEl.focus();
-			} else if (message.type === "toggleSessionHistory") {
-				setSessionPanelOpen(sessionPanelEl.hidden);
 			}
 		});
 

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Replaced the in-webview chat history panel with a native QuickPick for switching sessions.
+- Improved webview rendering with batched streaming updates, collapsible long code blocks, and truncated tool output previews with a "Show full output" toggle.
+
 ## [0.0.4] - 2026-08-21
 
 ### Added

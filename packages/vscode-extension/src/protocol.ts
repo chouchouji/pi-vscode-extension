@@ -64,8 +64,7 @@ export type HostToWebviewMessage =
 	| { type: "sessions"; sessions: SessionSummary[]; activeSessionPath: string | undefined }
 	| { type: "approvalRequested"; approval: ApprovalPrompt }
 	| { type: "approvalResolved"; id: string }
-	| { type: "prefill"; text: string }
-	| { type: "toggleSessionHistory" };
+	| { type: "prefill"; text: string };
 
 export interface WebviewRequestParams {
 	ready: Record<string, never>;
@@ -73,6 +72,7 @@ export interface WebviewRequestParams {
 	stop: Record<string, never>;
 	new: Record<string, never>;
 	selectModel: Record<string, never>;
+	showSessionPicker: Record<string, never>;
 	switchSession: { path: string };
 	setPermissionMode: { permissionMode: PermissionMode };
 	setApprovalMode: { approvalMode: ApprovalMode };
@@ -119,7 +119,13 @@ export function parseWebviewMessage(value: unknown): WebviewRequestEnvelope | un
 		return;
 	}
 
-	if (method === "ready" || method === "stop" || method === "new" || method === "selectModel") {
+	if (
+		method === "ready" ||
+		method === "stop" ||
+		method === "new" ||
+		method === "selectModel" ||
+		method === "showSessionPicker"
+	) {
 		return { kind: "request", id, request: { method, params: {} } };
 	}
 

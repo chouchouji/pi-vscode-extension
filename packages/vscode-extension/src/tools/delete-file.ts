@@ -21,9 +21,12 @@ export function createDeleteFileToolDefinition(options: VsCodeToolOptions): Tool
 		execute: async (_toolCallId, params) => {
 			const uri = resolveFileUri(options.cwd, params.path);
 			try {
-				await vscode.workspace.fs.readFile(uri);
+				const stat = await vscode.workspace.fs.stat(uri);
+				if (stat.type !== vscode.FileType.File) {
+					return errorResult("Path exists but is not a file.", "delete file");
+				}
 			} catch {
-				return errorResult("Path does not exist or is not a file.", "delete file");
+				return errorResult("Path does not exist.", "delete file");
 			}
 
 			const approved = await options.confirmDeleteFile({ filePath: uri.fsPath });

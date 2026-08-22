@@ -1,12 +1,25 @@
 export function getWebviewScript(highlighterScriptUri: string, scriptNonce: string): string {
 	return `			const vscode = acquireVsCodeApi();
 		let nextRequestId = 0;
+		const requestTimeoutMs = 60000;
 		const pendingRequests = new Map();
 
 		function call(method, params = {}) {
 			const id = String(++nextRequestId);
-			vscode.postMessage({ kind: "request", id, request: { method, params } });
-			return new Promise((resolve, reject) => pendingRequests.set(id, { resolve, reject }));
+			return new Promise((resolve, reject) => {
+				const timeoutId = window.setTimeout(() => {
+					pendingRequests.delete(id);
+					reject(new Error("Pi request timed out."));
+				}, requestTimeoutMs);
+				pendingRequests.set(id, { resolve, reject, timeoutId });
+				try {
+					vscode.postMessage({ kind: "request", id, request: { method, params } });
+				} catch (error) {
+					window.clearTimeout(timeoutId);
+					pendingRequests.delete(id);
+					reject(error);
+				}
+			});
 		}
 
 		function notify(method, params) {
@@ -1437,6 +1450,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				const pending = pendingRequests.get(envelope.id);
 				if (!pending) return;
 				pendingRequests.delete(envelope.id);
+				window.clearTimeout(pending.timeoutId);
 				if (envelope.ok) {
 					pending.resolve();
 				} else {

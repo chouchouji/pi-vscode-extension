@@ -53,7 +53,6 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 			localResourceRoots: [this.extensionUri],
 		};
-		webviewView.webview.html = getWebviewHtml(webviewView.webview, this.extensionUri);
 		webviewView.webview.onDidReceiveMessage((message) => {
 			const parsed = parseWebviewMessage(message);
 			if (parsed) {
@@ -69,6 +68,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 					);
 			}
 		});
+		webviewView.webview.html = getWebviewHtml(webviewView.webview, this.extensionUri);
 		this.postState();
 		void this.refreshSessions();
 		void this.refreshModelStatus();

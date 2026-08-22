@@ -16,6 +16,7 @@ import {
 	type PermissionMode,
 	parseWebviewMessage,
 	type SessionSummary,
+	type StreamingBehavior,
 	type WebviewResponseEnvelope,
 	type WebviewToHostMessage,
 } from "./protocol.ts";
@@ -58,7 +59,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			const parsed = parseWebviewMessage(message);
 			if (parsed) {
 				void this.handleWebviewMessage(parsed.request)
-					.then(() => this.respond({ kind: "response", id: parsed.id, ok: true }))
+					.then((data) =>
+						this.respond({
+							kind: "response",
+							id: parsed.id,
+							ok: true,
+							...(data === undefined ? {} : { data }),
+						}),
+					)
 					.catch((error: unknown) =>
 						this.respond({
 							kind: "response",
@@ -241,6 +249,8 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			case "running":
 				this.running = event.running;
 				break;
+			case "queueUpdate":
+				break;
 			case "modelStatus":
 				this.modelStatus = event.modelStatus;
 				break;
@@ -248,18 +258,18 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post(event);
 	}
 
-	private async handleWebviewMessage(message: WebviewToHostMessage) {
+	private async handleWebviewMessage(message: WebviewToHostMessage): Promise<unknown> {
 		switch (message.method) {
 			case "ready":
 				this.postState();
 				break;
 			case "send":
-				await this.sendPrompt(message.params.text);
+				await this.sendPrompt(message.params.text, message.params.streamingBehavior);
 				break;
 			case "stop":
 				this.approvalController.rejectPendingApprovals();
 				await this.service?.abort();
-				break;
+				return this.service?.clearMessageQueue();
 			case "new":
 				await this.newChat();
 				break;
@@ -272,6 +282,8 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			case "showSessionPicker":
 				await this.showSessionPicker();
 				break;
+			case "clearQueue":
+				return this.service?.clearMessageQueue();
 			case "setPermissionMode":
 				this.approvalController.rejectPendingApprovals();
 				this.permissionMode = message.params.permissionMode;
@@ -312,14 +324,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		editor.selection = new vscode.Selection(position, position);
 	}
 
-	private async sendPrompt(text: string) {
+	private async sendPrompt(text: string, streamingBehavior?: StreamingBehavior) {
 		const trimmed = text.trim();
-		if (!trimmed || this.running) {
+		if (!trimmed) {
 			return;
 		}
 
 		const service = await this.ensureService();
-		await service.prompt(trimmed);
+		await service.prompt(trimmed, streamingBehavior);
 		await this.refreshSessions();
 	}
 

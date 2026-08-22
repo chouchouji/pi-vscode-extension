@@ -2,6 +2,7 @@ import { isNumber, isObject, isString } from "rattail";
 
 export type PermissionMode = "ask" | "plan" | "code";
 export type ApprovalMode = "ask" | "auto";
+export type StreamingBehavior = "steer" | "followUp";
 
 export interface ToolMessage {
 	name: string;
@@ -60,6 +61,7 @@ export type HostToWebviewMessage =
 	| { type: "appendDelta"; id: string; delta: string }
 	| { type: "replace"; id: string; role?: ChatMessage["role"]; text: string; working?: boolean; tool?: ToolMessage }
 	| { type: "running"; running: boolean }
+	| { type: "queueUpdate"; steering: string[]; followUp: string[] }
 	| { type: "modelStatus"; modelStatus: ModelStatus | undefined }
 	| { type: "sessions"; sessions: SessionSummary[]; activeSessionPath: string | undefined }
 	| { type: "approvalRequested"; approval: ApprovalPrompt }
@@ -68,11 +70,12 @@ export type HostToWebviewMessage =
 
 export interface WebviewRequestParams {
 	ready: Record<string, never>;
-	send: { text: string };
+	send: { text: string; streamingBehavior?: StreamingBehavior };
 	stop: Record<string, never>;
 	new: Record<string, never>;
 	selectModel: Record<string, never>;
 	showSessionPicker: Record<string, never>;
+	clearQueue: Record<string, never>;
 	switchSession: { path: string };
 	setPermissionMode: { permissionMode: PermissionMode };
 	setApprovalMode: { approvalMode: ApprovalMode };
@@ -95,7 +98,7 @@ export interface WebviewRequestEnvelope {
 }
 
 export type WebviewResponseEnvelope =
-	| { kind: "response"; id: string; ok: true }
+	| { kind: "response"; id: string; ok: true; data?: unknown }
 	| { kind: "response"; id: string; ok: false; error: { message: string } };
 
 export interface HostToWebviewEventEnvelope {
@@ -124,13 +127,18 @@ export function parseWebviewMessage(value: unknown): WebviewRequestEnvelope | un
 		method === "stop" ||
 		method === "new" ||
 		method === "selectModel" ||
-		method === "showSessionPicker"
+		method === "showSessionPicker" ||
+		method === "clearQueue"
 	) {
 		return { kind: "request", id, request: { method, params: {} } };
 	}
 
 	if (method === "send" && isString(params.text)) {
-		return { kind: "request", id, request: { method, params: { text: params.text } } };
+		const streamingBehavior =
+			params.streamingBehavior === "steer" || params.streamingBehavior === "followUp"
+				? params.streamingBehavior
+				: undefined;
+		return { kind: "request", id, request: { method, params: { text: params.text, streamingBehavior } } };
 	}
 
 	if (method === "switchSession" && isString(params.path)) {

@@ -582,6 +582,45 @@ export function getWebviewStyles(): string {
 		.composer {
 			padding: 0 12px 8px;
 		}
+		.pending-queue {
+			display: flex;
+			align-items: center;
+			flex-wrap: wrap;
+			gap: 4px;
+			padding: 4px 0 6px;
+		}
+		.pending-queue[hidden] {
+			display: none;
+		}
+		.pending-queue-label {
+			color: var(--vscode-descriptionForeground);
+			font-size: 11px;
+		}
+		.pending-queue-item {
+			max-width: 240px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			border: 1px solid var(--vscode-panel-border);
+			border-radius: 5px;
+			padding: 1px 6px;
+			font-size: 11px;
+			color: var(--vscode-descriptionForeground);
+		}
+		.pending-queue-steer {
+			color: var(--vscode-charts-blue);
+		}
+		.pending-queue-followUp {
+			color: var(--vscode-charts-purple);
+		}
+		.pending-queue-restore {
+			border: 0;
+			border-radius: 5px;
+			background: var(--vscode-button-secondaryBackground);
+			color: var(--vscode-button-secondaryForeground);
+			padding: 2px 8px;
+			font-size: 11px;
+		}
 		.composer-box {
 			border: 1px solid var(--vscode-focusBorder, var(--vscode-inputOption-activeBorder));
 			border-radius: 8px;

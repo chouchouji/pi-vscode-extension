@@ -6,6 +6,7 @@
 
 - Replaced the in-webview chat history panel with a native QuickPick for switching sessions.
 - Improved webview rendering with batched streaming updates, collapsible long code blocks, and truncated tool output previews with a "Show full output" toggle.
+- Added support for sending steer and follow-up messages while Pi is running: `Cmd+Enter` sends a steer, `Alt+Enter` queues a follow-up, with a pending queue display and restore-to-input action.
 
 ### Changed
 

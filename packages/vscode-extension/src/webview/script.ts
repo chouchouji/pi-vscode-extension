@@ -45,6 +45,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const approvalModeLabelEl = document.getElementById("approvalModeLabel");
 		const selectMenuEl = document.getElementById("selectMenu");
 		const modelStatusEl = document.getElementById("modelStatus");
+		const pendingQueueEl = document.getElementById("pendingQueue");
 		const messageRenderDelayMs = 60;
 		const codeBlockPreviewLines = 24;
 		const toolOutputPreviewHeadLines = 20;
@@ -1250,8 +1251,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function setRunning(value) {
 			running = value;
-			sendEl.disabled = value;
-			sendEl.hidden = value;
+			sendEl.disabled = false;
+			sendEl.hidden = false;
 			stopEl.disabled = !value;
 			stopEl.hidden = !value;
 		}
@@ -1426,6 +1427,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				pendingMessageRenderTimer = undefined;
 			}
 			pendingMessageRenderIds.clear();
+			pendingQueueEl.textContent = "";
+			pendingQueueEl.hidden = true;
 			messagesEl.textContent = "";
 			approvalsEl.textContent = "";
 			messageEls.clear();
@@ -1451,16 +1454,67 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			messagesEl.scrollTop = messagesEl.scrollHeight;
 		}
 
-		function send() {
-			const text = inputEl.value.trim();
-			if (!text || running) return;
-			inputEl.value = "";
-			resetPromptHistoryNavigation();
-			notify("send", { text });
+		function restoreQueuedMessagesToInput(data) {
+			const restored = (data?.steering || []).concat(data?.followUp || []);
+			if (restored.length === 0) {
+				return;
+			}
+			const current = inputEl.value;
+			inputEl.value = [current, ...restored].filter((text) => text.trim()).join("\\n\\n");
+			inputEl.focus();
 		}
 
-		sendEl.addEventListener("click", send);
-		stopEl.addEventListener("click", () => notify("stop", {}));
+		function renderPendingQueue(steering, followUp) {
+			pendingQueueEl.textContent = "";
+			const items = [];
+			for (const text of steering || []) {
+				items.push({ text, kind: "steer" });
+			}
+			for (const text of followUp || []) {
+				items.push({ text, kind: "followUp" });
+			}
+			if (items.length === 0) {
+				pendingQueueEl.hidden = true;
+				return;
+			}
+			pendingQueueEl.hidden = false;
+			const label = document.createElement("span");
+			label.className = "pending-queue-label";
+			label.textContent = "Queued";
+			pendingQueueEl.appendChild(label);
+			for (const item of items) {
+				const chip = document.createElement("span");
+				chip.className = ["pending-queue-item", "pending-queue-" + item.kind].join(" ");
+				chip.title = (item.kind === "steer" ? "Steer: " : "Follow-up: ") + item.text;
+				chip.textContent = (item.kind === "steer" ? "⇧ " : "↪ ") + item.text.split("\\n")[0].slice(0, 60);
+				pendingQueueEl.appendChild(chip);
+			}
+			const restore = document.createElement("button");
+			restore.type = "button";
+			restore.className = "pending-queue-restore";
+			restore.textContent = "Restore";
+			restore.addEventListener("click", () => {
+				void call("clearQueue", {})
+					.then((data) => restoreQueuedMessagesToInput(data))
+					.catch((error) => console.error("Pi clearQueue failed:", error));
+			});
+			pendingQueueEl.appendChild(restore);
+		}
+
+		function send(streamingBehavior) {
+			const text = inputEl.value.trim();
+			if (!text) return;
+			inputEl.value = "";
+			resetPromptHistoryNavigation();
+			notify("send", { text, streamingBehavior });
+		}
+
+		sendEl.addEventListener("click", () => send("steer"));
+		stopEl.addEventListener("click", () => {
+			void call("stop", {})
+				.then((data) => restoreQueuedMessagesToInput(data))
+				.catch((error) => console.error("Pi stop failed:", error));
+		});
 		newEl.addEventListener("click", () => notify("new", {}));
 		modelStatusEl.addEventListener("click", () => notify("selectModel", {}));
 		reviewAllEl.addEventListener("click", () => {
@@ -1513,9 +1567,14 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			closeSelectMenu();
 		});
 		inputEl.addEventListener("keydown", (event) => {
+			if (event.key === "Enter" && event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+				event.preventDefault();
+				send("followUp");
+				return;
+			}
 			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
-				send();
+				send("steer");
 				return;
 			}
 			if (event.key === "ArrowUp" && shouldHandlePromptHistoryKey(event, "previous")) {
@@ -1538,7 +1597,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				pendingRequests.delete(envelope.id);
 				window.clearTimeout(pending.timeoutId);
 				if (envelope.ok) {
-					pending.resolve();
+					pending.resolve(envelope.data);
 				} else {
 					pending.reject(new Error(envelope.error?.message || "Pi request failed."));
 				}
@@ -1572,6 +1631,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				queueMessageRender(replacedMessage.id);
 			} else if (message.type === "running") {
 				setRunning(message.running);
+			} else if (message.type === "queueUpdate") {
+				renderPendingQueue(message.steering, message.followUp);
 			} else if (message.type === "modelStatus") {
 				setModelStatus(message.modelStatus);
 			} else if (message.type === "approvalRequested") {

@@ -17,7 +17,14 @@ import {
 import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
 import { isArray, isObject, isString } from "rattail";
 import * as vscode from "vscode";
-import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, ToolMessage } from "./protocol.ts";
+import type {
+	ChatMessage,
+	ModelStatus,
+	PermissionMode,
+	SessionSummary,
+	StreamingBehavior,
+	ToolMessage,
+} from "./protocol.ts";
 import {
 	type ApplyEditsRequest,
 	createApplyEditsToolDefinition,
@@ -42,6 +49,7 @@ export type PiAgentServiceEvent =
 	| { type: "appendDelta"; id: string; delta: string }
 	| { type: "replace"; id: string; role?: ChatMessage["role"]; text: string; working?: boolean; tool?: ToolMessage }
 	| { type: "running"; running: boolean }
+	| { type: "queueUpdate"; steering: string[]; followUp: string[] }
 	| { type: "modelStatus"; modelStatus: ModelStatus | undefined };
 
 export interface PiAgentServiceOptions {
@@ -408,12 +416,12 @@ export class PiAgentService {
 		return this.sessionManager ? chatMessagesFromEntries(this.sessionManager.buildContextEntries()) : [];
 	}
 
-	async prompt(text: string) {
+	async prompt(text: string, streamingBehavior?: StreamingBehavior) {
 		const session = await this.ensureSession();
 		this.running = true;
 		this.onEvent({ type: "running", running: true });
 		try {
-			await session.prompt(text, { source: "interactive" });
+			await session.prompt(text, { source: "interactive", streamingBehavior });
 		} catch (error) {
 			this.onEvent({
 				type: "append",
@@ -426,6 +434,10 @@ export class PiAgentService {
 			this.running = false;
 			this.onEvent({ type: "running", running: false });
 		}
+	}
+
+	clearMessageQueue(): { steering: string[]; followUp: string[] } {
+		return this.session?.clearQueue() ?? { steering: [], followUp: [] };
 	}
 
 	async abort() {
@@ -762,6 +774,13 @@ export class PiAgentService {
 			case "agent_settled":
 				this.running = false;
 				this.onEvent({ type: "running", running: false });
+				break;
+			case "queue_update":
+				this.onEvent({
+					type: "queueUpdate",
+					steering: [...event.steering],
+					followUp: [...event.followUp],
+				});
 				break;
 			case "entry_appended":
 				if (event.entry.type === "model_change") {

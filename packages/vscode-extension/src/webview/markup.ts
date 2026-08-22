@@ -16,6 +16,7 @@ export function getWebviewBody(): string {
 		</div>
 		<div class="composer">
 			<div id="selectMenu" class="select-menu" hidden></div>
+			<div id="pendingQueue" class="pending-queue" hidden></div>
 			<div class="composer-box">
 				<textarea id="input" placeholder="Describe what to build"></textarea>
 				<div class="composer-toolbar">
@@ -29,7 +30,7 @@ export function getWebviewBody(): string {
 					</div>
 					<div class="composer-actions">
 						<button id="stop" class="send-button" type="button" title="Stop current response" disabled hidden>■</button>
-						<button id="send" class="send-button" type="button" title="Send">↑</button>
+						<button id="send" class="send-button" type="button" title="Send (Cmd+Enter); Alt+Enter queues follow-up while running">↑</button>
 					</div>
 				</div>
 			</div>

@@ -47,7 +47,15 @@ import {
 export type PiAgentServiceEvent =
 	| { type: "append"; message: ChatMessage }
 	| { type: "appendDelta"; id: string; delta: string }
-	| { type: "replace"; id: string; role?: ChatMessage["role"]; text: string; working?: boolean; tool?: ToolMessage }
+	| {
+			type: "replace";
+			id: string;
+			role?: ChatMessage["role"];
+			text: string;
+			working?: boolean;
+			tool?: ToolMessage;
+			timestamp?: number;
+	  }
 	| { type: "running"; running: boolean }
 	| { type: "queueUpdate"; steering: string[]; followUp: string[] }
 	| { type: "modelStatus"; modelStatus: ModelStatus | undefined };
@@ -207,12 +215,14 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 		}
 
 		const message = entry.message;
+		const timestamp = new Date(entry.timestamp).getTime();
 		switch (message.role) {
 			case "user":
 				messages.push({
 					id: entry.id,
 					role: "user",
 					text: contentToText(message.content),
+					timestamp,
 				});
 				break;
 			case "assistant":
@@ -220,6 +230,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 					id: entry.id,
 					role: message.errorMessage ? "error" : "assistant",
 					text: message.errorMessage ?? contentToText(message.content),
+					timestamp,
 				});
 				break;
 			case "toolResult": {
@@ -234,6 +245,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 						args: toolArgsById.get(message.toolCallId),
 						output,
 					},
+					timestamp,
 				});
 				break;
 			}
@@ -248,6 +260,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 						args: message.command,
 						output: message.output,
 					},
+					timestamp,
 				});
 				break;
 			case "custom":
@@ -256,6 +269,7 @@ function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
 						id: entry.id,
 						role: "system",
 						text: contentToText(message.content),
+						timestamp,
 					});
 				}
 				break;
@@ -657,11 +671,23 @@ export class PiAgentService {
 				if (event.message.role === "assistant") {
 					const id = createId("assistant");
 					this.assistantMessageId = id;
-					this.onEvent({ type: "append", message: { id, role: "assistant", text: "", working: true } });
+					this.onEvent({
+						type: "append",
+						message: {
+							id,
+							role: "assistant",
+							text: "",
+							working: true,
+							timestamp: event.message.timestamp,
+						},
+					});
 				} else if (event.message.role === "user") {
 					const text = contentToText(event.message.content);
 					if (text.trim()) {
-						this.onEvent({ type: "append", message: { id: createId("user"), role: "user", text } });
+						this.onEvent({
+							type: "append",
+							message: { id: createId("user"), role: "user", text, timestamp: event.message.timestamp },
+						});
 					}
 				}
 				break;
@@ -685,6 +711,7 @@ export class PiAgentService {
 						id: chatMessageId,
 						text,
 						working: false,
+						timestamp: event.message.timestamp,
 					});
 					this.assistantMessageId = undefined;
 				}
@@ -704,6 +731,7 @@ export class PiAgentService {
 						role: "tool",
 						text: `Running ${event.toolName}...`,
 						working: true,
+						timestamp: Date.now(),
 						tool: {
 							name: event.toolName,
 							status: "running",
@@ -748,6 +776,7 @@ export class PiAgentService {
 					role: event.isError ? "error" : "tool",
 					text: `${event.toolName}: ${output}`,
 					working: false,
+					timestamp: Date.now(),
 					tool: {
 						name: event.toolName,
 						status: event.isError ? "failed" : "completed",

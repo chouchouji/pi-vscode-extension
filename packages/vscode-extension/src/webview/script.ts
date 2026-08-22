@@ -46,6 +46,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const selectMenuEl = document.getElementById("selectMenu");
 		const modelStatusEl = document.getElementById("modelStatus");
 		const pendingQueueEl = document.getElementById("pendingQueue");
+		const runningHintEl = document.getElementById("runningHint");
+		const sessionTimeEl = document.getElementById("sessionTime");
 		const messageRenderDelayMs = 60;
 		const codeBlockPreviewLines = 24;
 		const toolOutputPreviewHeadLines = 20;
@@ -1053,6 +1055,41 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			return message.role === "assistant" && !message.working && !message.tool && !(message.text || "").trim();
 		}
 
+		function formatMessageTime(timestamp) {
+			return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+		}
+
+		function formatSessionTime(timestamp) {
+			const date = new Date(timestamp);
+			const pad = (value) => String(value).padStart(2, "0");
+			return [
+				date.getFullYear(),
+				"-",
+				pad(date.getMonth() + 1),
+				"-",
+				pad(date.getDate()),
+				" ",
+				pad(date.getHours()),
+				":",
+				pad(date.getMinutes()),
+			].join("");
+		}
+
+		function updateSessionTime() {
+			if (running || messageEls.size === 0) {
+				sessionTimeEl.hidden = true;
+				return;
+			}
+			let lastTimestamp;
+			for (const message of messageData.values()) {
+				if (message.timestamp && (lastTimestamp === undefined || message.timestamp > lastTimestamp)) {
+					lastTimestamp = message.timestamp;
+				}
+			}
+			sessionTimeEl.textContent = formatSessionTime(lastTimestamp ?? Date.now());
+			sessionTimeEl.hidden = false;
+		}
+
 		function flushPendingMessageRenders() {
 			pendingMessageRenderTimer = undefined;
 			if (pendingMessageRenderIds.size === 0) {
@@ -1141,6 +1178,12 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				streamingMessageState.delete(message.id);
 				el.textContent = "";
 				appendMarkdown(el, message.text || (message.working ? "..." : ""));
+				if (message.role === "assistant" && !message.working && message.timestamp) {
+					const time = document.createElement("div");
+					time.className = "message-time";
+					time.textContent = formatMessageTime(message.timestamp);
+					el.appendChild(time);
+				}
 			}
 			updateEmptyState();
 		}
@@ -1255,6 +1298,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			sendEl.hidden = false;
 			stopEl.disabled = !value;
 			stopEl.hidden = !value;
+			runningHintEl.hidden = !value;
+			updateSessionTime();
 		}
 
 		function setModelStatus(modelStatus) {
@@ -1430,6 +1475,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			pendingQueueEl.textContent = "";
 			pendingQueueEl.hidden = true;
 			messagesEl.textContent = "";
+			messagesEl.appendChild(sessionTimeEl);
 			approvalsEl.textContent = "";
 			messageEls.clear();
 			messageData.clear();
@@ -1619,6 +1665,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				}
 			} else if (message.type === "replace") {
 				const el = messageEls.get(message.id);
+				const existing = messageData.get(message.id);
 				const role = message.role || (el ? el.dataset.role : undefined) || "assistant";
 				const replacedMessage = {
 					id: message.id,
@@ -1626,6 +1673,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 					text: message.text || "",
 					working: message.working,
 					tool: message.tool,
+					timestamp: message.timestamp ?? existing?.timestamp,
 				};
 				messageData.set(replacedMessage.id, replacedMessage);
 				queueMessageRender(replacedMessage.id);

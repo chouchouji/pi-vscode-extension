@@ -6,7 +6,9 @@ export function getWebviewBody(): string {
 				<div class="empty-title">Build with Pi</div>
 				<div class="empty-subtitle">AI responses may be inaccurate</div>
 			</div>
-			<div id="messages" class="messages"></div>
+			<div id="messages" class="messages">
+				<div id="sessionTime" class="session-time" hidden></div>
+			</div>
 			<div id="approvalBatch" class="approval-batch" hidden>
 				<button id="reviewAll" class="secondary" type="button">Review all</button>
 				<button id="applyAll" class="primary" type="button">Apply all</button>
@@ -17,6 +19,10 @@ export function getWebviewBody(): string {
 		<div class="composer">
 			<div id="selectMenu" class="select-menu" hidden></div>
 			<div id="pendingQueue" class="pending-queue" hidden></div>
+			<div id="runningHint" class="running-hint" hidden>
+				<span class="running-hint-dot"></span>
+				<span>Pi 正在运行 · Cmd/Ctrl+Enter 打断 · Alt+Enter 排队后发</span>
+			</div>
 			<div class="composer-box">
 				<textarea id="input" placeholder="Describe what to build"></textarea>
 				<div class="composer-toolbar">

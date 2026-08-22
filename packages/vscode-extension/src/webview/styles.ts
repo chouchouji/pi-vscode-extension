@@ -170,6 +170,23 @@ export function getWebviewStyles(): string {
 		.message.assistant {
 			color: var(--vscode-foreground);
 		}
+		.message-time {
+			text-align: right;
+			font-size: 10px;
+			line-height: 1;
+			margin-top: 6px;
+			color: var(--vscode-descriptionForeground);
+			opacity: 0.8;
+		}
+		.session-time {
+			text-align: right;
+			font-size: 10px;
+			line-height: 1;
+			margin-top: 2px;
+			margin-bottom: 4px;
+			color: var(--vscode-descriptionForeground);
+			opacity: 0.8;
+		}
 		.message.error {
 			padding: 9px 11px;
 			border: 1px solid var(--vscode-errorForeground);
@@ -620,6 +637,33 @@ export function getWebviewStyles(): string {
 			color: var(--vscode-button-secondaryForeground);
 			padding: 2px 8px;
 			font-size: 11px;
+		}
+		.running-hint {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			padding: 4px 2px 6px;
+			font-size: 11px;
+			color: var(--vscode-descriptionForeground);
+		}
+		.running-hint[hidden] {
+			display: none;
+		}
+		.running-hint-dot {
+			width: 6px;
+			height: 6px;
+			border-radius: 50%;
+			background: var(--vscode-charts-blue);
+			animation: running-hint-pulse 1.2s ease-in-out infinite;
+		}
+		@keyframes running-hint-pulse {
+			0%,
+			100% {
+				opacity: 1;
+			}
+			50% {
+				opacity: 0.35;
+			}
 		}
 		.composer-box {
 			border: 1px solid var(--vscode-focusBorder, var(--vscode-inputOption-activeBorder));

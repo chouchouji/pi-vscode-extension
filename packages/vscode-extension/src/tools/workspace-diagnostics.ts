@@ -2,8 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { diagnosticSeverityLabel, formatDiagnostic } from "./diagnostic-utils.ts";
-import { clampLimit, textResult, toWorkspacePath } from "./shared.ts";
+import { clampLimit, diagnosticSeverityLabel, formatDiagnostic, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 export function createWorkspaceDiagnosticsToolDefinition(options: VsCodeToolOptions): ToolDefinition {

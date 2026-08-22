@@ -2,8 +2,14 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { formatDiagnostic } from "./diagnostic-utils.ts";
-import { errorResult, getActiveEditor, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
+import {
+	errorResult,
+	formatDiagnostic,
+	getActiveEditor,
+	resolveFileUri,
+	textResult,
+	toWorkspacePath,
+} from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 export function createDiagnosticsToolDefinition(options: VsCodeToolOptions): ToolDefinition {

@@ -2,8 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { formatLocation } from "./location-utils.ts";
-import { errorResult, positionFromOneBased, resolveFileUri, textResult } from "./shared.ts";
+import { errorResult, formatLocation, positionFromOneBased, resolveFileUri, textResult } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 export function createDefinitionToolDefinition(options: VsCodeToolOptions): ToolDefinition {

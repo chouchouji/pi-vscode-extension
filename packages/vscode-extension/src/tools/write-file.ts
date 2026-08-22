@@ -3,7 +3,6 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { uriExists } from "./file-utils.ts";
 import { errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
@@ -19,11 +18,12 @@ async function readExistingFileText(uri: vscode.Uri): Promise<ExistingFileText |
 			text: new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)),
 		};
 	} catch {
-		const exists = await uriExists(uri);
-		if (exists) {
+		try {
+			await vscode.workspace.fs.stat(uri);
 			return "Path exists but is not a readable file.";
+		} catch {
+			return { exists: false, text: "" };
 		}
-		return { exists: false, text: "" };
 	}
 }
 

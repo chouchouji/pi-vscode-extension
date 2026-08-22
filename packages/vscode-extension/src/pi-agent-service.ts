@@ -173,7 +173,12 @@ function sessionLabel(session: SessionInfo): string {
 }
 
 function sessionDetail(session: SessionInfo): string {
-	return `${session.modified.toISOString()} - ${session.messageCount} messages`;
+	const modifiedDate = [
+		session.modified.getFullYear(),
+		String(session.modified.getMonth() + 1).padStart(2, "0"),
+		String(session.modified.getDate()).padStart(2, "0"),
+	].join("/");
+	return `${modifiedDate} - ${session.messageCount} messages`;
 }
 
 export async function listSessionSummaries(options: ListSessionSummariesOptions): Promise<SessionSummary[]> {

@@ -10,11 +10,13 @@ import {
 } from "./pi-agent-service.ts";
 import {
 	type ChatMessage,
+	type HostToWebviewEventEnvelope,
 	type HostToWebviewMessage,
 	type ModelStatus,
 	type PermissionMode,
 	parseWebviewMessage,
 	type SessionSummary,
+	type WebviewResponseEnvelope,
 	type WebviewToHostMessage,
 } from "./protocol.ts";
 import { getWebviewHtml } from "./webview/index.ts";
@@ -55,7 +57,16 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.onDidReceiveMessage((message) => {
 			const parsed = parseWebviewMessage(message);
 			if (parsed) {
-				void this.handleWebviewMessage(parsed);
+				void this.handleWebviewMessage(parsed.request)
+					.then(() => this.respond({ kind: "response", id: parsed.id, ok: true }))
+					.catch((error: unknown) =>
+						this.respond({
+							kind: "response",
+							id: parsed.id,
+							ok: false,
+							error: { message: error instanceof Error ? error.message : String(error) },
+						}),
+					);
 			}
 		});
 		this.postState();
@@ -241,12 +252,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async handleWebviewMessage(message: WebviewToHostMessage): Promise<void> {
-		switch (message.type) {
+		switch (message.method) {
 			case "ready":
 				this.postState();
 				break;
 			case "send":
-				await this.sendPrompt(message.text);
+				await this.sendPrompt(message.params.text);
 				break;
 			case "stop":
 				this.approvalController.rejectPendingApprovals();
@@ -259,26 +270,26 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 				await this.selectModel();
 				break;
 			case "switchSession":
-				await this.switchSession(message.path);
+				await this.switchSession(message.params.path);
 				break;
 			case "setPermissionMode":
 				this.approvalController.rejectPendingApprovals();
-				this.permissionMode = message.permissionMode;
-				this.service?.setPermissionMode(message.permissionMode);
+				this.permissionMode = message.params.permissionMode;
+				this.service?.setPermissionMode(message.params.permissionMode);
 				this.postState();
 				break;
 			case "setApprovalMode":
-				this.approvalController.setApprovalMode(message.approvalMode);
+				this.approvalController.setApprovalMode(message.params.approvalMode);
 				this.postState();
 				break;
 			case "approvalResponse":
-				await this.approvalController.handleApprovalResponse(message.id, message.action);
+				await this.approvalController.handleApprovalResponse(message.params.id, message.params.action);
 				break;
 			case "approvalBatchResponse":
-				await this.approvalController.handleApprovalBatchResponse(message.action);
+				await this.approvalController.handleApprovalBatchResponse(message.params.action);
 				break;
 			case "openFile":
-				await this.openFileReference(message.path, message.line, message.character);
+				await this.openFileReference(message.params.path, message.params.line, message.params.character);
 				break;
 		}
 	}
@@ -365,6 +376,11 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private post(message: HostToWebviewMessage | PiAgentServiceEvent): void {
-		void this.view?.webview.postMessage(message);
+		const event: HostToWebviewEventEnvelope = { kind: "event", event: message };
+		void this.view?.webview.postMessage(event);
+	}
+
+	private respond(response: WebviewResponseEnvelope): void {
+		void this.view?.webview.postMessage(response);
 	}
 }

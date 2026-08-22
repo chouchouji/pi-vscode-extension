@@ -2,8 +2,9 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
 	lang: "zh-CN",
-	title: "Pi VS Code 扩展",
-	description: "Pi VS Code 扩展的技术文档。",
+	title: "Pi VSCode Extension",
+	description: "Pi VSCode Extension的技术文档。",
+	base: "/pi-vscode-extension/",
 	themeConfig: {
 		nav: [{ text: "文章", link: "/articles/vscode-webview-communication" }],
 		socialLinks: [{ icon: "github", link: "https://github.com/chouchouji/pi-vscode-extension" }],

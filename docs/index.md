@@ -4,3 +4,4 @@
 
 - [VS Code Webview 通信](/articles/vscode-webview-communication)
 - [Agent Loop 实现剖析：从用户输入到模型输出](/articles/agent-loop)
+- [Tool 系统设计：从 schema 到并行执行](/articles/tool-design)

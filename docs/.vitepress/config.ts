@@ -21,14 +21,18 @@ export default defineConfig({
             text: "VSCode Webview 通信",
             link: "/articles/vscode-webview-communication",
           },
-		  {
-			text: "Agent Loop 实现剖析：从用户输入到模型输出",
-			link: "/articles/agent-loop-analysis",
-		  },
-		  {
-			text: "Tool 系统设计：从 schema 到并行执行",
-			link: "/articles/tool-system-design",
-		  }
+          {
+            text: "Agent Loop 实现剖析：从用户输入到模型输出",
+            link: "/articles/agent-loop-analysis",
+          },
+          {
+            text: "Tool 系统设计：从 schema 到并行执行",
+            link: "/articles/tool-system-design",
+          },
+          {
+            text: "Session 系统设计：从 JSONL 树到运行时切换",
+            link: "/articles/session-design",
+          }
         ],
       },
     ],

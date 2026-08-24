@@ -2,29 +2,22 @@ import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import {
 	type AgentSession,
-	type AgentSessionEvent,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
 	getDefaultSessionDir,
 	ModelRuntime,
-	type SessionEntry,
-	type SessionInfo,
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
-import { isArray, isObject, isString } from "rattail";
 import * as vscode from "vscode";
-import type {
-	ChatMessage,
-	ModelStatus,
-	PermissionMode,
-	SessionSummary,
-	StreamingBehavior,
-	ToolMessage,
-} from "./protocol.ts";
+import { AgentSessionEventMapper } from "./agent-service/agent-session-event-mapper.ts";
+import { createId } from "./agent-service/chat-message-format.ts";
+import type { PiAgentServiceEvent } from "./agent-service/events.ts";
+import { chatMessagesFromEntries, listSessionSummaries } from "./agent-service/session-history.ts";
+import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, StreamingBehavior } from "./protocol.ts";
 import {
 	type ApplyEditsRequest,
 	createApplyEditsToolDefinition,
@@ -44,21 +37,8 @@ import {
 	type WriteFileRequest,
 } from "./tools/index.ts";
 
-export type PiAgentServiceEvent =
-	| { type: "append"; message: ChatMessage }
-	| { type: "appendDelta"; id: string; delta: string }
-	| {
-			type: "replace";
-			id: string;
-			role?: ChatMessage["role"];
-			text: string;
-			working?: boolean;
-			tool?: ToolMessage;
-			timestamp?: number;
-	  }
-	| { type: "running"; running: boolean }
-	| { type: "queueUpdate"; steering: string[]; followUp: string[] }
-	| { type: "modelStatus"; modelStatus: ModelStatus | undefined };
+export type { PiAgentServiceEvent } from "./agent-service/events.ts";
+export { listSessionSummaries } from "./agent-service/session-history.ts";
 
 export interface PiAgentServiceOptions {
 	cwd: string;
@@ -73,12 +53,6 @@ export interface PiAgentServiceOptions {
 	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
 }
 
-interface ListSessionSummariesOptions {
-	cwd: string;
-	agentDir?: string;
-	activeSessionPath?: string;
-}
-
 export interface ModelSelection {
 	provider: string;
 	modelId: string;
@@ -89,194 +63,6 @@ export interface ModelSelection {
 }
 
 type RuntimeModel = ReturnType<ModelRuntime["getModels"]>[number];
-
-function createId(prefix: string): string {
-	return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function contentToText(content: unknown): string {
-	if (isString(content)) {
-		return content;
-	}
-	if (!isArray(content)) {
-		return "";
-	}
-
-	return content
-		.map((part: unknown) => {
-			if (!isObject(part)) {
-				return "";
-			}
-			return part.type === "text" && isString(part.text) ? part.text : "";
-		})
-		.join("");
-}
-
-function formatToolResultText(event: Extract<AgentSessionEvent, { type: "tool_execution_end" }>): string {
-	return formatToolOutput(event.result, event.isError);
-}
-
-function formatToolOutput(result: unknown, isError: boolean): string {
-	if (!isObject(result)) {
-		return isError ? "Tool failed." : "Tool completed.";
-	}
-
-	const parts: readonly unknown[] = isArray(result.content) ? result.content : [];
-	const content = parts
-		.map((part: unknown) => {
-			if (!isObject(part)) {
-				return "";
-			}
-			return part.type === "text" && isString(part.text) ? part.text : "[image]";
-		})
-		.join("\n");
-	return content.trim() || (isError ? "Tool failed." : "Tool completed.");
-}
-
-function formatToolTitle(result: unknown): string | undefined {
-	if (!isObject(result)) {
-		return;
-	}
-	const details = result.details;
-	if (!isObject(details)) {
-		return;
-	}
-	const title = details.title;
-	return isString(title) && title.trim() ? title : undefined;
-}
-
-function formatUnknown(value: unknown): string | undefined {
-	if (value === undefined) {
-		return;
-	}
-	if (isString(value)) {
-		return value;
-	}
-	try {
-		return JSON.stringify(value, undefined, 2);
-	} catch {
-		return String(value);
-	}
-}
-
-function sessionLabel(session: SessionInfo): string {
-	const name = session.name?.trim();
-	if (name) {
-		return name;
-	}
-	const firstMessage = session.firstMessage.trim().split("\n")[0]?.trim();
-	if (firstMessage) {
-		return firstMessage.length > 48 ? `${firstMessage.slice(0, 45)}...` : firstMessage;
-	}
-	return `Session ${session.id.slice(0, 8)}`;
-}
-
-function sessionDetail(session: SessionInfo): string {
-	const modifiedDate = [
-		session.modified.getFullYear(),
-		String(session.modified.getMonth() + 1).padStart(2, "0"),
-		String(session.modified.getDate()).padStart(2, "0"),
-	].join("/");
-	return `${modifiedDate} - ${session.messageCount} messages`;
-}
-
-export async function listSessionSummaries(options: ListSessionSummariesOptions): Promise<SessionSummary[]> {
-	const cwd = resolve(options.cwd);
-	const agentDir = options.agentDir ? resolve(options.agentDir) : getAgentDir();
-	const sessions = await SessionManager.list(cwd, getDefaultSessionDir(cwd, agentDir));
-	return sessions.slice(0, 30).map((session) => ({
-		path: session.path,
-		label: sessionLabel(session),
-		detail: sessionDetail(session),
-		active: options.activeSessionPath === session.path,
-	}));
-}
-
-function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] {
-	const messages: ChatMessage[] = [];
-	const toolArgsById = new Map<string, string>();
-	for (const entry of entries) {
-		if (entry.type !== "message" || entry.message.role !== "assistant") {
-			continue;
-		}
-		for (const part of entry.message.content) {
-			if (part.type === "toolCall") {
-				const args = formatUnknown(part.arguments);
-				if (args) {
-					toolArgsById.set(part.id, args);
-				}
-			}
-		}
-	}
-
-	for (const entry of entries) {
-		if (entry.type !== "message") {
-			continue;
-		}
-
-		const message = entry.message;
-		const timestamp = new Date(entry.timestamp).getTime();
-		switch (message.role) {
-			case "user":
-				messages.push({
-					id: entry.id,
-					role: "user",
-					text: contentToText(message.content),
-					timestamp,
-				});
-				break;
-			case "assistant":
-				messages.push({
-					id: entry.id,
-					role: message.errorMessage ? "error" : "assistant",
-					text: message.errorMessage ?? contentToText(message.content),
-					timestamp,
-				});
-				break;
-			case "toolResult": {
-				const output = contentToText(message.content);
-				messages.push({
-					id: entry.id,
-					role: message.isError ? "error" : "tool",
-					text: `${message.toolName}: ${output}`,
-					tool: {
-						name: message.toolName,
-						status: message.isError ? "failed" : "completed",
-						args: toolArgsById.get(message.toolCallId),
-						output,
-					},
-					timestamp,
-				});
-				break;
-			}
-			case "bashExecution":
-				messages.push({
-					id: entry.id,
-					role: message.exitCode === 0 && !message.cancelled ? "tool" : "error",
-					text: `bash: ${message.output}`,
-					tool: {
-						name: "bash",
-						status: message.exitCode === 0 && !message.cancelled ? "completed" : "failed",
-						args: message.command,
-						output: message.output,
-					},
-					timestamp,
-				});
-				break;
-			case "custom":
-				if (message.display) {
-					messages.push({
-						id: entry.id,
-						role: "system",
-						text: contentToText(message.content),
-						timestamp,
-					});
-				}
-				break;
-		}
-	}
-	return messages;
-}
 
 const READ_ONLY_TOOL_NAMES = ["read", "ls", "find", "grep"];
 const CODE_TOOL_NAMES = [...READ_ONLY_TOOL_NAMES, "bash"];
@@ -309,9 +95,7 @@ export class PiAgentService {
 	private session?: AgentSession;
 	private sessionManager?: SessionManager;
 	private unsubscribe?: () => void;
-	private assistantMessageId?: string;
-	private readonly toolMessageIds = new Map<string, string>();
-	private readonly toolArgs = new Map<string, string>();
+	private readonly eventMapper: AgentSessionEventMapper;
 	private running = false;
 	private readonly cwd: string;
 	private readonly agentDir?: string;
@@ -336,6 +120,13 @@ export class PiAgentService {
 		this.confirmDeleteFile = options.confirmDeleteFile;
 		this.confirmDeleteDirectory = options.confirmDeleteDirectory;
 		this.confirmRenameSymbol = options.confirmRenameSymbol;
+		this.eventMapper = new AgentSessionEventMapper({
+			onEvent: (event) => this.onEvent(event),
+			onModelChanged: () => this.emitModelStatus(),
+			onRunningChanged: (running) => {
+				this.running = running;
+			},
+		});
 	}
 
 	setPermissionMode(permissionMode: PermissionMode) {
@@ -591,7 +382,7 @@ export class PiAgentService {
 		]);
 		this.session = result.session;
 		this.sessionManager = result.session.sessionManager;
-		this.unsubscribe = result.session.subscribe((event) => this.handleSessionEvent(event));
+		this.unsubscribe = result.session.subscribe((event) => this.eventMapper.handle(event));
 		this.emitModelStatus();
 		if (result.modelFallbackMessage) {
 			this.onEvent({
@@ -657,169 +448,10 @@ export class PiAgentService {
 		this.unsubscribe = undefined;
 		this.session?.dispose();
 		this.session = undefined;
-		this.assistantMessageId = undefined;
-		this.toolMessageIds.clear();
-		this.toolArgs.clear();
+		this.eventMapper.reset();
 		this.running = false;
 		this.onEvent({ type: "running", running: false });
 		this.emitModelStatus();
-	}
-
-	private handleSessionEvent(event: AgentSessionEvent) {
-		switch (event.type) {
-			case "message_start": {
-				if (event.message.role === "assistant") {
-					const id = createId("assistant");
-					this.assistantMessageId = id;
-					this.onEvent({
-						type: "append",
-						message: {
-							id,
-							role: "assistant",
-							text: "",
-							working: true,
-							timestamp: event.message.timestamp,
-						},
-					});
-				} else if (event.message.role === "user") {
-					const text = contentToText(event.message.content);
-					if (text.trim()) {
-						this.onEvent({
-							type: "append",
-							message: { id: createId("user"), role: "user", text, timestamp: event.message.timestamp },
-						});
-					}
-				}
-				break;
-			}
-			case "message_update": {
-				if (event.assistantMessageEvent.type === "text_delta" && this.assistantMessageId) {
-					this.onEvent({
-						type: "appendDelta",
-						id: this.assistantMessageId,
-						delta: event.assistantMessageEvent.delta,
-					});
-				}
-				break;
-			}
-			case "message_end": {
-				if (event.message.role === "assistant" && this.assistantMessageId) {
-					const chatMessageId = this.assistantMessageId;
-					const text = contentToText(event.message.content);
-					this.onEvent({
-						type: "replace",
-						id: chatMessageId,
-						text,
-						working: false,
-						timestamp: event.message.timestamp,
-					});
-					this.assistantMessageId = undefined;
-				}
-				break;
-			}
-			case "tool_execution_start": {
-				const id = createId("tool");
-				const args = formatUnknown(event.args);
-				this.toolMessageIds.set(event.toolCallId, id);
-				if (args) {
-					this.toolArgs.set(event.toolCallId, args);
-				}
-				this.onEvent({
-					type: "append",
-					message: {
-						id,
-						role: "tool",
-						text: `Running ${event.toolName}...`,
-						working: true,
-						timestamp: Date.now(),
-						tool: {
-							name: event.toolName,
-							status: "running",
-							args,
-						},
-					},
-				});
-				break;
-			}
-			case "tool_execution_update": {
-				const id = this.toolMessageIds.get(event.toolCallId);
-				if (!id) {
-					break;
-				}
-				const args = formatUnknown(event.args) ?? this.toolArgs.get(event.toolCallId);
-				if (args) {
-					this.toolArgs.set(event.toolCallId, args);
-				}
-				this.onEvent({
-					type: "replace",
-					id,
-					text: `Running ${event.toolName}...`,
-					working: true,
-					tool: {
-						name: event.toolName,
-						status: "running",
-						args,
-						output: formatToolOutput(event.partialResult, false),
-						title: formatToolTitle(event.partialResult),
-					},
-				});
-				break;
-			}
-			case "tool_execution_end": {
-				const id = this.toolMessageIds.get(event.toolCallId);
-				this.toolMessageIds.delete(event.toolCallId);
-				const args = this.toolArgs.get(event.toolCallId);
-				this.toolArgs.delete(event.toolCallId);
-				const output = formatToolResultText(event);
-				const message: ChatMessage = {
-					id: id ?? createId("tool"),
-					role: event.isError ? "error" : "tool",
-					text: `${event.toolName}: ${output}`,
-					working: false,
-					timestamp: Date.now(),
-					tool: {
-						name: event.toolName,
-						status: event.isError ? "failed" : "completed",
-						args,
-						output,
-						title: formatToolTitle(event.result),
-					},
-				};
-				if (id) {
-					this.onEvent({
-						type: "replace",
-						id,
-						role: message.role,
-						text: message.text,
-						working: message.working,
-						tool: message.tool,
-					});
-				} else {
-					this.onEvent({ type: "append", message });
-				}
-				break;
-			}
-			case "agent_end":
-			case "agent_settled":
-				this.running = false;
-				this.onEvent({ type: "running", running: false });
-				break;
-			case "queue_update":
-				this.onEvent({
-					type: "queueUpdate",
-					steering: [...event.steering],
-					followUp: [...event.followUp],
-				});
-				break;
-			case "entry_appended":
-				if (event.entry.type === "model_change") {
-					this.emitModelStatus();
-				}
-				break;
-			case "thinking_level_changed":
-				this.emitModelStatus();
-				break;
-		}
 	}
 
 	private emitModelStatus() {

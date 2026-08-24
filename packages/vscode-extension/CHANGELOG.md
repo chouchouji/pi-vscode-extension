@@ -5,6 +5,7 @@
 ### Changed
 
 - Split chat view state management out of `PiChatViewProvider`.
+- Split Pi agent session history and event mapping out of `PiAgentService`.
 
 ## [0.0.5] - 2026-08-24
 

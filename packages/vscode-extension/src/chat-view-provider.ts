@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 import * as vscode from "vscode";
+import { PiChatViewState } from "./chat-view-state.ts";
 import { EditApprovalController } from "./edit-approval-controller.ts";
 import {
 	getWorkspaceCwd,
@@ -9,10 +10,8 @@ import {
 	type PiAgentServiceEvent,
 } from "./pi-agent-service.ts";
 import {
-	type ChatMessage,
 	type HostToWebviewEventEnvelope,
 	type HostToWebviewMessage,
-	type ModelStatus,
 	type PermissionMode,
 	parseWebviewMessage,
 	type SessionSummary,
@@ -28,20 +27,15 @@ type SessionQuickPickItem = vscode.QuickPickItem & { sessionPath: string };
 export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	private view?: vscode.WebviewView;
 	private service?: PiAgentService;
-	private readonly messages: ChatMessage[] = [];
 	private readonly approvalController: EditApprovalController;
-	private modelStatus: ModelStatus | undefined;
-	private sessions: SessionSummary[] = [];
-	private activeSessionPath: string | undefined;
-	private running = false;
-	private permissionMode: PermissionMode;
+	private readonly state: PiChatViewState;
 	private readonly extensionPath: string;
 	private readonly extensionUri: vscode.Uri;
 
 	constructor(context: vscode.ExtensionContext) {
 		this.extensionPath = context.extensionPath;
 		this.extensionUri = context.extensionUri;
-		this.permissionMode = this.readPermissionMode();
+		this.state = new PiChatViewState(this.readPermissionMode());
 		this.approvalController = new EditApprovalController({
 			globalStorageUri: context.globalStorageUri,
 			reveal: () => this.reveal(),
@@ -95,8 +89,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.approvalController.rejectPendingApprovals();
 		const service = await this.ensureService();
 		await service.newSession();
-		this.messages.length = 0;
-		this.running = false;
+		this.state.resetSession();
 		await this.refreshSessions();
 		this.postState();
 	}
@@ -111,7 +104,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	async selectModel() {
-		if (this.running) {
+		if (this.state.isRunning) {
 			await vscode.window.showInformationMessage("Cannot switch model while Pi is running.");
 			return;
 		}
@@ -210,7 +203,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			cwd: getWorkspaceCwd(),
 			agentDir: this.readAgentDir(),
 			extensionPath: this.extensionPath,
-			permissionMode: this.permissionMode,
+			permissionMode: this.state.currentPermissionMode,
 			onEvent: (event) => this.handleServiceEvent(event),
 			confirmApplyEdits: (request) => this.approvalController.confirmApplyEdits(request),
 			confirmWriteFile: (request) => this.approvalController.confirmWriteFile(request),
@@ -223,39 +216,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private handleServiceEvent(event: PiAgentServiceEvent) {
-		switch (event.type) {
-			case "append":
-				this.messages.push(event.message);
-				break;
-			case "appendDelta": {
-				const message = this.messages.find((candidate) => candidate.id === event.id);
-				if (message) {
-					message.text += event.delta;
-				}
-				break;
-			}
-			case "replace": {
-				const message = this.messages.find((candidate) => candidate.id === event.id);
-				if (message) {
-					if (event.role) {
-						message.role = event.role;
-					}
-					message.text = event.text;
-					message.working = event.working;
-					message.tool = event.tool;
-				}
-				break;
-			}
-			case "running":
-				this.running = event.running;
-				break;
-			case "queueUpdate":
-				break;
-			case "modelStatus":
-				this.modelStatus = event.modelStatus;
-				break;
-		}
-		this.post(event);
+		this.post(this.state.applyServiceEvent(event));
 	}
 
 	private async handleWebviewMessage(message: WebviewToHostMessage): Promise<unknown> {
@@ -286,7 +247,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 				return this.service?.clearMessageQueue();
 			case "setPermissionMode":
 				this.approvalController.rejectPendingApprovals();
-				this.permissionMode = message.params.permissionMode;
+				this.state.setPermissionMode(message.params.permissionMode);
 				this.service?.setPermissionMode(message.params.permissionMode);
 				this.postState();
 				break;
@@ -336,16 +297,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async switchSession(path: string) {
-		if (this.running) {
+		if (this.state.isRunning) {
 			return;
 		}
 		try {
 			this.approvalController.rejectPendingApprovals();
 			const service = await this.ensureService();
 			await service.switchSession(path);
-			this.messages.length = 0;
-			this.messages.push(...service.getSessionMessages());
-			this.running = false;
+			this.state.replaceSessionMessages(service.getSessionMessages());
 			await this.refreshSessions();
 			this.postState();
 		} catch (error) {
@@ -356,13 +315,13 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async showSessionPicker() {
-		if (this.running) {
+		if (this.state.isRunning) {
 			await vscode.window.showInformationMessage("Cannot switch chat history while Pi is running.");
 			return;
 		}
 
 		await this.refreshSessions();
-		const items: SessionQuickPickItem[] = this.sessions.map((session) => ({
+		const items: SessionQuickPickItem[] = this.state.sessionSummaries.map((session) => ({
 			sessionPath: session.path,
 			label: session.active ? `$(check) ${session.label}` : session.label,
 			description: session.active ? "Current" : undefined,
@@ -379,7 +338,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			matchOnDetail: true,
 			placeHolder: "Switch chat session",
 		});
-		if (!picked || picked.sessionPath === this.activeSessionPath) {
+		if (!picked || picked.sessionPath === this.state.currentSessionPath) {
 			return;
 		}
 
@@ -387,18 +346,21 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async refreshSessions() {
+		let sessions: SessionSummary[];
+		let activeSessionPath: string | undefined;
 		if (this.service) {
-			this.sessions = await this.service.listSessions();
-			this.activeSessionPath = this.service.getActiveSessionPath();
+			sessions = await this.service.listSessions();
+			activeSessionPath = this.service.getActiveSessionPath();
 		} else {
-			this.activeSessionPath = undefined;
-			this.sessions = await listSessionSummaries({
+			activeSessionPath = undefined;
+			sessions = await listSessionSummaries({
 				cwd: getWorkspaceCwd(),
 				agentDir: this.readAgentDir(),
-				activeSessionPath: this.activeSessionPath,
+				activeSessionPath,
 			});
 		}
-		this.post({ type: "sessions", sessions: this.sessions, activeSessionPath: this.activeSessionPath });
+		this.state.setSessions(sessions, activeSessionPath);
+		this.post(this.state.createSessionsEvent());
 	}
 
 	private async refreshModelStatus() {
@@ -406,7 +368,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			const service = await this.ensureService();
 			await service.refreshModelStatus();
 		} catch (error) {
-			this.modelStatus = undefined;
+			this.state.clearModelStatus();
 			await vscode.window.showErrorMessage(
 				`Failed to load Pi model: ${error instanceof Error ? error.message : String(error)}`,
 			);
@@ -415,17 +377,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private postState() {
-		this.post({
-			type: "state",
-			messages: this.messages,
-			running: this.running,
-			permissionMode: this.permissionMode,
-			approvalMode: this.approvalController.approvalMode,
-			approvals: this.approvalController.approvals,
-			modelStatus: this.modelStatus,
-			sessions: this.sessions,
-			activeSessionPath: this.activeSessionPath,
-		});
+		this.post(this.state.createStateMessage(this.approvalController.approvalMode, this.approvalController.approvals));
 	}
 
 	private post(message: HostToWebviewMessage) {

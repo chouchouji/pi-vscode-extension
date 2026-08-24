@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Split chat view state management out of `PiChatViewProvider`.
+
 ## [0.0.5] - 2026-08-24
 
 ### Added

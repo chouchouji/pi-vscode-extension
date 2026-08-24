@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-08-24
+
 ### Added
 
 - Replaced the in-webview chat history panel with a native QuickPick for switching sessions.

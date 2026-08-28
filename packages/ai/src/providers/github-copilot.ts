@@ -4,9 +4,10 @@ import { openAIResponsesApi } from "../api/openai-responses.lazy.ts";
 import { envApiKeyAuth, lazyOAuth } from "../auth/helpers.ts";
 import { loadGitHubCopilotOAuth } from "../auth/oauth/load.ts";
 import { createProvider, type Provider } from "../models.ts";
+import type { GatewayApi } from "../types.ts";
 import { GITHUB_COPILOT_MODELS } from "./github-copilot.models.ts";
 
-export function githubCopilotProvider(): Provider<"anthropic-messages" | "openai-completions" | "openai-responses"> {
+export function githubCopilotProvider(): Provider<GatewayApi> {
 	return createProvider({
 		id: "github-copilot",
 		name: "GitHub Copilot",

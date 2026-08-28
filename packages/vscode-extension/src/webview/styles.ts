@@ -159,8 +159,22 @@ export function getWebviewStyles(): string {
 			margin-bottom: 16px;
 			padding: 0;
 			overflow-wrap: anywhere;
+			animation: pi-message-fade-in 180ms ease-out;
 		}
-		.message.user {
+		.message.message-fade-out {
+			opacity: 0;
+			transition: opacity 150ms ease-in;
+		}
+		@keyframes pi-message-fade-in {
+			from {
+				opacity: 0;
+			}
+			to {
+				opacity: 1;
+			}
+		}
+		.message.user,
+		.message.error {
 			margin-left: 18px;
 			padding: 9px 11px;
 			border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
@@ -169,6 +183,22 @@ export function getWebviewStyles(): string {
 		}
 		.message.assistant {
 			color: var(--vscode-foreground);
+		}
+		.message-header {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			margin-bottom: 6px;
+		}
+		.message-avatar {
+			display: block;
+			width: 22px;
+			height: 22px;
+			border-radius: 6px;
+		}
+		.message-author {
+			font-size: 12px;
+			font-weight: 600;
 		}
 		.message-time {
 			text-align: right;
@@ -186,12 +216,6 @@ export function getWebviewStyles(): string {
 			margin-bottom: 4px;
 			color: var(--vscode-descriptionForeground);
 			opacity: 0.8;
-		}
-		.message.error {
-			padding: 9px 11px;
-			border: 1px solid var(--vscode-errorForeground);
-			border-radius: 8px;
-			background: var(--vscode-inputValidation-errorBackground);
 		}
 		.message.tool {
 			padding: 8px 10px;

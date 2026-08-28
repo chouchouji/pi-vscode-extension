@@ -1,5 +1,6 @@
-export function getWebviewScript(highlighterScriptUri: string, scriptNonce: string): string {
+export function getWebviewScript(highlighterScriptUri: string, scriptNonce: string, avatarUri: string): string {
 	return `			const vscode = acquireVsCodeApi();
+		const assistantAvatarUri = ${JSON.stringify(avatarUri)};
 		let nextRequestId = 0;
 		const requestTimeoutMs = 60000;
 		const pendingRequests = new Map();
@@ -48,19 +49,15 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const pendingQueueEl = document.getElementById("pendingQueue");
 		const runningHintEl = document.getElementById("runningHint");
 		const sessionTimeEl = document.getElementById("sessionTime");
-		const messageRenderDelayMs = 60;
 		const codeBlockPreviewLines = 24;
 		const toolOutputPreviewHeadLines = 20;
 		const toolOutputPreviewTailLines = 0;
 		const toolOutputPreviewMaxChars = 120000;
 		const messageEls = new Map();
 		const messageData = new Map();
-		const streamingMessageState = new Map();
-		const pendingMessageRenderIds = new Set();
 		const approvalEls = new Map();
 		const approvalData = new Map();
 		const reviewedApprovalIds = new Set();
-		let pendingMessageRenderTimer;
 		let running = false;
 		let permissionModeValue = "code";
 		let approvalModeValue = "ask";
@@ -1044,10 +1041,12 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function removeMessage(id) {
 			const el = messageEls.get(id);
-			if (el) el.remove();
+			if (el) {
+				el.classList.add("message-fade-out");
+				setTimeout(() => el.remove(), 160);
+			}
 			messageEls.delete(id);
 			messageData.delete(id);
-			streamingMessageState.delete(id);
 			updateEmptyState();
 		}
 
@@ -1090,68 +1089,70 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			sessionTimeEl.hidden = false;
 		}
 
-		function flushPendingMessageRenders() {
-			pendingMessageRenderTimer = undefined;
-			if (pendingMessageRenderIds.size === 0) {
-				return;
+		const pendingRenderIds = new Set();
+		let renderScheduled = false;
+
+		// Coalesce rapid streaming deltas into at most one render per animation
+		// frame; rendering every token rebuilds the whole message and stutters.
+		function scheduleRender(id) {
+			pendingRenderIds.add(id);
+			if (renderScheduled) return;
+			renderScheduled = true;
+			requestAnimationFrame(() => {
+				renderScheduled = false;
+				for (const pendingId of pendingRenderIds) {
+					const message = messageData.get(pendingId);
+					if (message) renderMessage(message);
+				}
+				pendingRenderIds.clear();
+				messagesEl.scrollTop = messagesEl.scrollHeight;
+			});
+		}
+
+		// Typewriter smoothing: incoming deltas sit in a buffer and are revealed
+		// at a steady cadence. The reveal rate scales with the backlog so long
+		// bursts still catch up instead of lagging behind the model.
+		const streamBuffers = new Map();
+		let typewriterTimer = null;
+
+		function enqueueDelta(id, delta) {
+			streamBuffers.set(id, (streamBuffers.get(id) || "") + delta);
+			if (typewriterTimer === null) {
+				typewriterTimer = setInterval(flushTypewriter, 24);
 			}
-			const ids = Array.from(pendingMessageRenderIds);
-			pendingMessageRenderIds.clear();
-			for (const id of ids) {
+		}
+
+		function flushTypewriter() {
+			let active = false;
+			for (const [id, buffer] of streamBuffers) {
 				const message = messageData.get(id);
-				if (message) {
-					renderMessage(message);
+				if (!message || buffer.length === 0) {
+					streamBuffers.delete(id);
+					continue;
 				}
-			}
-			messagesEl.scrollTop = messagesEl.scrollHeight;
-		}
-
-		function queueMessageRender(id) {
-			if (!id) {
-				return;
-			}
-			pendingMessageRenderIds.add(id);
-			if (pendingMessageRenderTimer !== undefined) {
-				return;
-			}
-			pendingMessageRenderTimer = window.setTimeout(flushPendingMessageRenders, messageRenderDelayMs);
-		}
-
-		function isStreamingAssistantMessage(message) {
-			return message.role === "assistant" && !message.tool && message.working;
-		}
-
-		function renderStreamingAssistantMessage(el, message) {
-			const text = message.text || "";
-			let state = streamingMessageState.get(message.id);
-			if (!state || !el.contains(state.container)) {
-				const container = document.createElement("div");
-				container.className = "message-content";
-				const paragraph = document.createElement("p");
-				container.appendChild(paragraph);
-				el.textContent = "";
-				el.appendChild(container);
-				state = { container, paragraph, renderedText: "" };
-				streamingMessageState.set(message.id, state);
-			}
-
-			if (!text) {
-				state.paragraph.textContent = message.working ? "..." : "";
-				state.renderedText = "";
-				return;
-			}
-
-			if (text.startsWith(state.renderedText)) {
-				const delta = text.slice(state.renderedText.length);
-				if (!state.renderedText) {
-					state.paragraph.textContent = text;
-				} else if (delta) {
-					state.paragraph.textContent = (state.paragraph.textContent || "") + delta;
+				const chars = Math.max(2, Math.ceil(buffer.length / 10));
+				message.text += buffer.slice(0, chars);
+				const rest = buffer.slice(chars);
+				if (rest) {
+					streamBuffers.set(id, rest);
+					active = true;
+				} else {
+					streamBuffers.delete(id);
 				}
-			} else {
-				state.paragraph.textContent = text;
+				scheduleRender(id);
 			}
-			state.renderedText = text;
+			if (!active && typewriterTimer !== null) {
+				clearInterval(typewriterTimer);
+				typewriterTimer = null;
+			}
+		}
+
+		function dropStreamBuffer(id) {
+			streamBuffers.delete(id);
+			if (streamBuffers.size === 0 && typewriterTimer !== null) {
+				clearInterval(typewriterTimer);
+				typewriterTimer = null;
+			}
 		}
 
 		function renderMessage(message) {
@@ -1168,15 +1169,24 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 			el.dataset.role = message.role;
 			el.className = ["message", message.role].join(" ");
+			el.textContent = "";
+			if (message.role === "assistant") {
+				const header = document.createElement("div");
+				header.className = "message-header";
+				const avatar = document.createElement("img");
+				avatar.className = "message-avatar";
+				avatar.src = assistantAvatarUri;
+				avatar.alt = "";
+				const author = document.createElement("span");
+				author.className = "message-author";
+				author.textContent = "Pi";
+				header.appendChild(avatar);
+				header.appendChild(author);
+				el.appendChild(header);
+			}
 			if (message.tool) {
-				streamingMessageState.delete(message.id);
-				el.textContent = "";
 				renderToolMessage(el, message);
-			} else if (isStreamingAssistantMessage(message)) {
-				renderStreamingAssistantMessage(el, message);
 			} else {
-				streamingMessageState.delete(message.id);
-				el.textContent = "";
 				appendMarkdown(el, message.text || (message.working ? "..." : ""));
 				if (message.role === "assistant" && !message.working && message.timestamp) {
 					const time = document.createElement("div");
@@ -1467,11 +1477,8 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		}
 
 		function setState(state) {
-			if (pendingMessageRenderTimer !== undefined) {
-				window.clearTimeout(pendingMessageRenderTimer);
-				pendingMessageRenderTimer = undefined;
-			}
-			pendingMessageRenderIds.clear();
+			streamBuffers.clear();
+			pendingRenderIds.clear();
 			pendingQueueEl.textContent = "";
 			pendingQueueEl.hidden = true;
 			messagesEl.textContent = "";
@@ -1479,7 +1486,6 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			approvalsEl.textContent = "";
 			messageEls.clear();
 			messageData.clear();
-			streamingMessageState.clear();
 			approvalEls.clear();
 			approvalData.clear();
 			const activeApprovalIds = new Set(state.approvals.map((approval) => approval.id));
@@ -1656,17 +1662,19 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			} else if (message.type === "append") {
 				appendUserPromptToHistory(message.message);
 				messageData.set(message.message.id, message.message);
-				queueMessageRender(message.message.id);
+				scheduleRender(message.message.id);
 			} else if (message.type === "appendDelta") {
 				const existing = messageData.get(message.id);
 				if (existing) {
-					existing.text += message.delta;
-					queueMessageRender(existing.id);
+					enqueueDelta(message.id, message.delta);
+				} else {
+					messagesEl.scrollTop = messagesEl.scrollHeight;
 				}
 			} else if (message.type === "replace") {
 				const el = messageEls.get(message.id);
 				const existing = messageData.get(message.id);
 				const role = message.role || (el ? el.dataset.role : undefined) || "assistant";
+				dropStreamBuffer(message.id);
 				const replacedMessage = {
 					id: message.id,
 					role,
@@ -1676,7 +1684,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 					timestamp: message.timestamp ?? existing?.timestamp,
 				};
 				messageData.set(replacedMessage.id, replacedMessage);
-				queueMessageRender(replacedMessage.id);
+				scheduleRender(replacedMessage.id);
 			} else if (message.type === "running") {
 				setRunning(message.running);
 			} else if (message.type === "queueUpdate") {

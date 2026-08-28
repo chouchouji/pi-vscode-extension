@@ -27,9 +27,6 @@ export type KnownApi =
 
 export type Api = KnownApi | (string & {});
 
-/** APIs supported by multi-API gateway providers (Cloudflare AI Gateway, GitHub Copilot, opencode-go). */
-export type GatewayApi = "anthropic-messages" | "openai-completions" | "openai-responses";
-
 export type KnownImagesApi = "openrouter-images";
 
 export type ImagesApi = KnownImagesApi | (string & {});

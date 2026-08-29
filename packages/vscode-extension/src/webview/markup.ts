@@ -23,8 +23,14 @@ export function getWebviewBody(): string {
 				<span class="running-hint-dot"></span>
 				<span>Pi 正在运行 · Cmd/Ctrl+Enter 打断 · Alt+Enter 排队后发</span>
 			</div>
+			<div id="composerResize" class="composer-resize"></div>
 			<div class="composer-box">
-				<textarea id="input" placeholder="Describe what to build"></textarea>
+				<div id="completionMenu" class="completion-menu" hidden>
+					<div id="completionMenuBody" class="completion-menu-body"></div>
+				</div>
+				<div class="composer-input">
+					<textarea id="input" placeholder="Describe what to build"></textarea>
+				</div>
 				<div class="composer-toolbar">
 					<div class="composer-tools">
 						<button id="new" class="tool-button" type="button" title="New chat">+</button>

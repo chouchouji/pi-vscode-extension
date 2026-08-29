@@ -11,11 +11,13 @@ import {
 	type PiAgentServiceEvent,
 } from "./pi-agent-service.ts";
 import {
+	type FileMentionItem,
 	type HostToWebviewEventEnvelope,
 	type HostToWebviewMessage,
 	type PermissionMode,
 	parseWebviewMessage,
 	type SessionSummary,
+	type SlashCommandItem,
 	type StreamingBehavior,
 	type WebviewResponseEnvelope,
 	type WebviewToHostMessage,
@@ -283,6 +285,10 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			case "showSessionPicker":
 				await this.showSessionPicker();
 				break;
+			case "listFiles":
+				return this.listFiles(message.params.query);
+			case "listCommands":
+				return this.listCommands();
 			case "clearQueue":
 				return this.service?.clearMessageQueue();
 			case "setPermissionMode":
@@ -308,7 +314,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async openFileReference(path: string, line: number | undefined, character: number | undefined) {
-		const trimmed = path.trim();
+		const trimmed = path.trim().replace(/^@/, "");
 		if (!trimmed) {
 			return;
 		}
@@ -323,6 +329,21 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		const targetCharacter = Math.max(0, Math.floor(character ?? 1) - 1);
 		const position = new vscode.Position(targetLine, targetCharacter);
 		editor.selection = new vscode.Selection(position, position);
+	}
+
+	private async listFiles(query: string): Promise<FileMentionItem[]> {
+		if (!vscode.workspace.workspaceFolders?.length) {
+			return [];
+		}
+		const sanitized = query.replace(/[*?[\]{}]/g, "").trim();
+		const pattern = sanitized ? `**/*${sanitized}*` : "**/*";
+		const uris = await vscode.workspace.findFiles(pattern, "{**/node_modules/**,**/.git/**}", 50);
+		return uris.map((uri) => ({ path: vscode.workspace.asRelativePath(uri, false) }));
+	}
+
+	private async listCommands(): Promise<SlashCommandItem[]> {
+		const service = await this.ensureService();
+		return service.listSlashCommands();
 	}
 
 	private async sendPrompt(text: string, streamingBehavior?: StreamingBehavior) {

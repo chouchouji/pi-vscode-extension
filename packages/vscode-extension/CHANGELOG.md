@@ -6,13 +6,21 @@
 
 - Added provider login and logout from the chat view: new `Pi: Login` / `Pi: Logout` commands, a login button in the chat view title, and a "Login..." retry action when selecting a model that is not authenticated.
 - Added an assistant message header with avatar and author name in the chat webview.
+- Added `@` file mention and `/` slash command autocomplete in the chat input, with keyboard navigation and IME-aware triggering.
+- Added a drag handle above the chat input to resize it between the default height and twice that height.
 
 ### Changed
 
 - Split chat view state management out of `PiChatViewProvider`.
 - Split Pi agent session history and event mapping out of `PiAgentService`.
 - Smoothed streaming responses with a typewriter reveal and animation-frame-coalesced renders; messages now fade in when appended and fade out when removed.
-- Error messages in chat now share the user message bubble style.
+- Error messages in chat now render like regular assistant messages, including the avatar header.
+- User messages now render as right-aligned bubbles that shrink to fit their content, without a border and with a square bottom-right corner.
+
+### Fixed
+
+- Fixed failed assistant turns rendering as an empty message with no visible error; the chat now shows the provider error text in place of the reply.
+- Fixed `@scope/name` tokens with a file extension (e.g. `@pro-uni/package.json`) rendering as yellow package names instead of clickable file links.
 
 ## [0.0.5] - 2026-08-24
 

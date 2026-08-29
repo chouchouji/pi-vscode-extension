@@ -17,7 +17,14 @@ import { AgentSessionEventMapper } from "./agent-service/agent-session-event-map
 import { createId } from "./agent-service/chat-message-format.ts";
 import type { PiAgentServiceEvent } from "./agent-service/events.ts";
 import { chatMessagesFromEntries, listSessionSummaries } from "./agent-service/session-history.ts";
-import type { ChatMessage, ModelStatus, PermissionMode, SessionSummary, StreamingBehavior } from "./protocol.ts";
+import type {
+	ChatMessage,
+	ModelStatus,
+	PermissionMode,
+	SessionSummary,
+	SlashCommandItem,
+	StreamingBehavior,
+} from "./protocol.ts";
 import {
 	type ApplyEditsRequest,
 	createApplyEditsToolDefinition,
@@ -229,6 +236,19 @@ export class PiAgentService {
 
 	getSessionMessages(): ChatMessage[] {
 		return this.sessionManager ? chatMessagesFromEntries(this.sessionManager.buildContextEntries()) : [];
+	}
+
+	async listSlashCommands(): Promise<SlashCommandItem[]> {
+		const session = await this.ensureSession();
+		const templates = session.promptTemplates.map((template) => ({
+			name: template.name,
+			description: template.description,
+		}));
+		const skills = session.resourceLoader.getSkills().skills.map((skill) => ({
+			name: `skill:${skill.name}`,
+			description: skill.description,
+		}));
+		return [...templates, ...skills];
 	}
 
 	async prompt(text: string, streamingBehavior?: StreamingBehavior) {

@@ -57,7 +57,9 @@
     "onCommand:pi.chat.addSelection",
     "onCommand:pi.chat.explainCurrentFile",
     "onCommand:pi.chat.history",
-    "onCommand:pi.chat.selectModel"
+    "onCommand:pi.chat.selectModel",
+    "onCommand:pi.chat.login",
+    "onCommand:pi.chat.logout"
   ],
   "contributes": {
     "commands": [
@@ -85,6 +87,16 @@
       {
         "command": "pi.chat.selectModel",
         "title": "Pi: Select Model"
+      },
+      {
+        "command": "pi.chat.login",
+        "title": "Pi: Login",
+        "icon": "$(key)"
+      },
+      {
+        "command": "pi.chat.logout",
+        "title": "Pi: Logout",
+        "icon": "$(sign-out)"
       }
     ],
     "viewsContainers": {
@@ -136,6 +148,11 @@
           "command": "pi.chat.history",
           "when": "view == pi.chat",
           "group": "navigation"
+        },
+        {
+          "command": "pi.chat.login",
+          "when": "view == pi.chat",
+          "group": "navigation"
         }
       ],
       "editor/context": [
@@ -160,6 +177,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "^0.81.1",
     "@earendil-works/pi-coding-agent": "^0.81.1",
     "@earendil-works/pi-mcp-adapter": "^0.81.1",
     "rattail": "1.0.18",

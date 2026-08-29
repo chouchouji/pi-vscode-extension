@@ -1,9 +1,13 @@
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import * as vscode from "vscode";
 import { PiChatViewProvider } from "./chat-view-provider.ts";
 
 let provider: PiChatViewProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
+	// OAuth flow modules use bundler-opaque dynamic imports that cannot resolve
+	// inside the esbuild bundle; register them statically instead.
+	registerBunOAuthFlows();
 	provider = new PiChatViewProvider(context);
 
 	context.subscriptions.push(
@@ -16,6 +20,8 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand("pi.chat.explainCurrentFile", () => provider?.explainCurrentFile()),
 		vscode.commands.registerCommand("pi.chat.history", () => provider?.toggleSessionHistory()),
 		vscode.commands.registerCommand("pi.chat.selectModel", () => provider?.selectModel()),
+		vscode.commands.registerCommand("pi.chat.login", () => provider?.login()),
+		vscode.commands.registerCommand("pi.chat.logout", () => provider?.logout()),
 	);
 }
 

@@ -1,5 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 import * as vscode from "vscode";
+import { runLoginFlow, runLogoutFlow } from "./auth-flow.ts";
 import { PiChatViewState } from "./chat-view-state.ts";
 import { EditApprovalController } from "./edit-approval-controller.ts";
 import {
@@ -66,7 +67,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 							kind: "response",
 							id: parsed.id,
 							ok: false,
-							error: { message: error instanceof Error ? error.message : String(error) },
+							error: {
+								message: error instanceof Error ? error.message : String(error),
+							},
 						}),
 					);
 			}
@@ -135,10 +138,47 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		try {
 			await service.selectModel(picked.provider, picked.modelId);
 		} catch (error) {
-			await vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.startsWith("Model is not available")) {
+				const action = await vscode.window.showErrorMessage(message, "Login...");
+				if (action === "Login...") {
+					const loggedIn = await runLoginFlow(await service.getModelRuntime(), picked.provider);
+					if (loggedIn) {
+						try {
+							await service.selectModel(picked.provider, picked.modelId);
+						} catch (retryError) {
+							await vscode.window.showErrorMessage(
+								retryError instanceof Error ? retryError.message : String(retryError),
+							);
+							return;
+						}
+						this.postState();
+					}
+				}
+				return;
+			}
+			await vscode.window.showErrorMessage(message);
 			return;
 		}
 		this.postState();
+	}
+
+	async login() {
+		const service = await this.ensureService();
+		const loggedIn = await runLoginFlow(await service.getModelRuntime());
+		if (loggedIn) {
+			await service.refreshModelStatus();
+			this.postState();
+		}
+	}
+
+	async logout() {
+		const service = await this.ensureService();
+		const loggedOut = await runLogoutFlow(await service.getModelRuntime());
+		if (loggedOut) {
+			await service.refreshModelStatus();
+			this.postState();
+		}
 	}
 
 	async explainCurrentFile() {

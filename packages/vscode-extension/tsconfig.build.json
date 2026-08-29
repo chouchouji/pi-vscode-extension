@@ -8,6 +8,8 @@
 		"rootDir": "./src",
 		"sourceMap": false,
 		"paths": {
+			"@earendil-works/pi-ai": ["../ai/dist/index.d.ts"],
+			"@earendil-works/pi-ai/bun-oauth": ["../ai/dist/bun-oauth.d.ts"],
 			"@earendil-works/pi-coding-agent": ["../coding-agent/dist/index.d.ts"],
 			"@earendil-works/pi-coding-agent/*": ["../coding-agent/dist/*.d.ts"],
 			"@earendil-works/pi-mcp-adapter": ["../mcp-adapter/dist/index.d.ts"],

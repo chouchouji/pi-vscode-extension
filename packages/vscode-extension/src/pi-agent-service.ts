@@ -143,7 +143,10 @@ export class PiAgentService {
 			this.onEvent({ type: "modelStatus", modelStatus: sessionStatus });
 			return;
 		}
-		this.onEvent({ type: "modelStatus", modelStatus: await this.getConfiguredModelStatus() });
+		this.onEvent({
+			type: "modelStatus",
+			modelStatus: await this.getConfiguredModelStatus(),
+		});
 	}
 
 	async listModelSelections(): Promise<ModelSelection[]> {
@@ -190,7 +193,10 @@ export class PiAgentService {
 		} else {
 			this.createFileSettingsManager().setDefaultModelAndProvider(provider, modelId);
 		}
-		this.onEvent({ type: "modelStatus", modelStatus: modelStatusFromModel(model) });
+		this.onEvent({
+			type: "modelStatus",
+			modelStatus: modelStatusFromModel(model),
+		});
 	}
 
 	async newSession() {
@@ -210,7 +216,11 @@ export class PiAgentService {
 
 	async listSessions(): Promise<SessionSummary[]> {
 		const currentPath = this.sessionManager?.getSessionFile();
-		return listSessionSummaries({ cwd: this.cwd, agentDir: this.agentDir, activeSessionPath: currentPath });
+		return listSessionSummaries({
+			cwd: this.cwd,
+			agentDir: this.agentDir,
+			activeSessionPath: currentPath,
+		});
 	}
 
 	getActiveSessionPath(): string | undefined {
@@ -262,6 +272,10 @@ export class PiAgentService {
 		return this.agentDir ? resolve(this.agentDir) : getAgentDir();
 	}
 
+	async getModelRuntime(): Promise<ModelRuntime> {
+		return this.ensureModelRuntime();
+	}
+
 	private ensureModelRuntime(): Promise<ModelRuntime> {
 		if (!this.modelRuntimePromise) {
 			const agentDir = this.agentDir ? resolve(this.agentDir) : undefined;
@@ -281,7 +295,10 @@ export class PiAgentService {
 		return this.createFileSettingsManager();
 	}
 
-	private getConfiguredDefaultModelConfig(): { defaultProvider?: string; defaultModel?: string } {
+	private getConfiguredDefaultModelConfig(): {
+		defaultProvider?: string;
+		defaultModel?: string;
+	} {
 		const settingsManager = this.createFileSettingsManager();
 		return {
 			defaultProvider: settingsManager.getDefaultProvider(),
@@ -387,7 +404,11 @@ export class PiAgentService {
 		if (result.modelFallbackMessage) {
 			this.onEvent({
 				type: "append",
-				message: { id: createId("system"), role: "system", text: result.modelFallbackMessage },
+				message: {
+					id: createId("system"),
+					role: "system",
+					text: result.modelFallbackMessage,
+				},
 			});
 		}
 		return result.session;
@@ -457,7 +478,10 @@ export class PiAgentService {
 	private emitModelStatus() {
 		const session = this.session;
 		if (session) {
-			this.onEvent({ type: "modelStatus", modelStatus: getModelStatus(session) });
+			this.onEvent({
+				type: "modelStatus",
+				modelStatus: getModelStatus(session),
+			});
 			return;
 		}
 		void this.refreshModelStatus();

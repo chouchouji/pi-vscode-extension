@@ -2,19 +2,10 @@
 
 ## [Unreleased]
 
-## [0.0.6] - 2026-08-28
-
-### Added
-
-- Added provider login and logout from the chat view: new `Pi: Login` / `Pi: Logout` commands, a login button in the chat view title, and a "Login..." retry action when selecting a model that is not authenticated.
-- Added an assistant message header with avatar and author name in the chat webview.
-
 ### Changed
 
 - Split chat view state management out of `PiChatViewProvider`.
 - Split Pi agent session history and event mapping out of `PiAgentService`.
-- Smoothed streaming responses with a typewriter reveal and animation-frame-coalesced renders; messages now fade in when appended and fade out when removed.
-- Error messages in chat now share the user message bubble style.
 
 ## [0.0.5] - 2026-08-24
 

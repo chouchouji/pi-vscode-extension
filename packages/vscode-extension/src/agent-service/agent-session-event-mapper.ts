@@ -73,10 +73,14 @@ export class AgentSessionEventMapper {
 			case "message_end": {
 				if (event.message.role === "assistant" && this.assistantMessageId) {
 					const chatMessageId = this.assistantMessageId;
-					const text = contentToText(event.message.content);
+					const failed = event.message.stopReason === "error";
+					const text = failed
+						? (event.message.errorMessage ?? "Request failed")
+						: contentToText(event.message.content);
 					this.onEvent({
 						type: "replace",
 						id: chatMessageId,
+						...(failed ? { role: "error" as const } : {}),
 						text,
 						working: false,
 						timestamp: event.message.timestamp,

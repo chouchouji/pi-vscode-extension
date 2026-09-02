@@ -173,12 +173,12 @@ export function getWebviewStyles(): string {
 				opacity: 1;
 			}
 		}
-		.message.user,
-		.message.error {
-			margin-left: 18px;
+		.message.user {
+			width: fit-content;
+			max-width: calc(100% - 18px);
+			margin-left: auto;
 			padding: 9px 11px;
-			border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
-			border-radius: 8px;
+			border-radius: 8px 8px 0 8px;
 			background: var(--vscode-input-background);
 		}
 		.message.assistant {
@@ -689,11 +689,96 @@ export function getWebviewStyles(): string {
 				opacity: 0.35;
 			}
 		}
+		.composer-resize {
+			position: relative;
+			z-index: 1;
+			height: 8px;
+			margin-bottom: -2px;
+			cursor: ns-resize;
+			touch-action: none;
+			user-select: none;
+		}
 		.composer-box {
+			position: relative;
 			border: 1px solid var(--vscode-focusBorder, var(--vscode-inputOption-activeBorder));
 			border-radius: 8px;
 			background: var(--vscode-input-background);
 			box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
+		}
+		.completion-menu {
+			position: absolute;
+			z-index: 9;
+			bottom: 100%;
+			left: 0;
+			right: 0;
+			margin-bottom: 6px;
+			overflow: hidden;
+			border: 1px solid var(--vscode-panel-border);
+			border-radius: 7px;
+			background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background));
+			box-shadow: 0 8px 28px var(--vscode-widget-shadow);
+		}
+		.completion-menu[hidden] {
+			display: none;
+		}
+		.completion-menu-body {
+			display: flex;
+			flex-direction: column;
+			max-height: 220px;
+			padding: 5px;
+			overflow-y: auto;
+		}
+		.completion-menu-body::-webkit-scrollbar {
+			width: 8px;
+		}
+		.completion-menu-body::-webkit-scrollbar-thumb {
+			background: var(--vscode-scrollbarSlider-background);
+		}
+		.completion-menu-body::-webkit-scrollbar-thumb:hover {
+			background: var(--vscode-scrollbarSlider-hoverBackground);
+		}
+		.completion-menu-body::-webkit-scrollbar-thumb:active {
+			background: var(--vscode-scrollbarSlider-activeBackground);
+		}
+		.completion-menu-body::-webkit-scrollbar-track,
+		.completion-menu-body::-webkit-scrollbar-corner {
+			background: transparent;
+		}
+		.completion-item {
+			display: flex;
+			align-items: baseline;
+			gap: 8px;
+			width: 100%;
+			min-height: 26px;
+			padding: 4px 7px;
+			border: 1px solid transparent;
+			border-radius: 5px;
+			color: var(--vscode-foreground);
+			background: transparent;
+			cursor: pointer;
+			font: inherit;
+			text-align: left;
+		}
+		.completion-item:hover,
+		.completion-item.active {
+			border-color: var(--vscode-focusBorder);
+			background: var(--vscode-list-hoverBackground);
+		}
+		.completion-item-label {
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			font-family: var(--vscode-editor-font-family);
+		}
+		.completion-item-description {
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			color: var(--vscode-descriptionForeground);
+			font-size: 0.82em;
 		}
 		.composer-toolbar {
 			display: flex;
@@ -871,8 +956,13 @@ export function getWebviewStyles(): string {
 		#approvalMode {
 			max-width: 180px;
 		}
+		.composer-input {
+			overflow: hidden;
+			border-radius: 8px 8px 0 0;
+		}
 		textarea {
 			box-sizing: border-box;
+			display: block;
 			width: 100%;
 			min-height: 58px;
 			max-height: 180px;
@@ -884,6 +974,22 @@ export function getWebviewStyles(): string {
 			outline: 0;
 			font-family: var(--vscode-font-family);
 			font-size: var(--vscode-font-size);
+		}
+		textarea::-webkit-scrollbar {
+			width: 8px;
+		}
+		textarea::-webkit-scrollbar-thumb {
+			background: var(--vscode-scrollbarSlider-background);
+		}
+		textarea::-webkit-scrollbar-thumb:hover {
+			background: var(--vscode-scrollbarSlider-hoverBackground);
+		}
+		textarea::-webkit-scrollbar-thumb:active {
+			background: var(--vscode-scrollbarSlider-activeBackground);
+		}
+		textarea::-webkit-scrollbar-track,
+		textarea::-webkit-scrollbar-corner {
+			background: transparent;
 		}
 		.primary {
 			min-width: 72px;

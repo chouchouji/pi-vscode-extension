@@ -45,10 +45,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const approvalModeEl = document.getElementById("approvalMode");
 		const approvalModeLabelEl = document.getElementById("approvalModeLabel");
 		const selectMenuEl = document.getElementById("selectMenu");
+		const completionMenuEl = document.getElementById("completionMenu");
+		const completionMenuBodyEl = document.getElementById("completionMenuBody");
 		const modelStatusEl = document.getElementById("modelStatus");
 		const pendingQueueEl = document.getElementById("pendingQueue");
 		const runningHintEl = document.getElementById("runningHint");
 		const sessionTimeEl = document.getElementById("sessionTime");
+		const composerResizeEl = document.getElementById("composerResize");
 		const codeBlockPreviewLines = 24;
 		const toolOutputPreviewHeadLines = 20;
 		const toolOutputPreviewTailLines = 0;
@@ -62,6 +65,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		let permissionModeValue = "code";
 		let approvalModeValue = "ask";
 		let openSelectKind = "";
+		let completion = null;
+		let completionItems = [];
+		let completionActiveIndex = 0;
+		let slashCommandsCache;
+		let fileQueryTimer = null;
+		let completionRequestSeq = 0;
+		let imeComposing = false;
 		let highlighterLoadPromise;
 		let userPromptHistory = [];
 		let promptHistoryCursor;
@@ -695,7 +705,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		}
 
 		function inlineCodeClassName(text) {
-			if (/^@[A-Za-z0-9._-]+\\/[A-Za-z0-9._-]+$/.test(text)) {
+			if (/^@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+$/.test(text)) {
 				return "inline-code inline-code-package";
 			}
 			if (/^(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+$/.test(text)) {
@@ -722,14 +732,14 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		function shouldRenderInlineCodeToken(text) {
 			return (
-				/^@[A-Za-z0-9._-]+\\/[A-Za-z0-9._-]+$/.test(text) ||
+				/^@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+$/.test(text) ||
 				/^(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+$/.test(text) ||
 				/^v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?$/.test(text)
 			);
 		}
 
 		function appendInline(parent, text) {
-			const pattern = /(\\\`[^\\\`]+\\\`|\\[[^\\]\\n]+\\]\\((https?:\\/\\/[^)\\s]+)\\)|@[A-Za-z0-9._-]+\\/[A-Za-z0-9._-]+|(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+|v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?|(?:\\.{1,2}\\/|\\/)?(?:[A-Za-z0-9_.@()-]+\\/)*[A-Za-z0-9_.@()-]+\\.[A-Za-z0-9]+(?::[0-9]+){0,2})/g;
+			const pattern = /(\\\`[^\\\`]+\\\`|\\[[^\\]\\n]+\\]\\((https?:\\/\\/[^)\\s]+)\\)|@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+(?![\\/A-Za-z0-9._-])|(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+|v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?|(?:\\.{1,2}\\/|\\/)?(?:[A-Za-z0-9_.@()-]+\\/)*[A-Za-z0-9_.@()-]+\\.[A-Za-z0-9]+(?::[0-9]+){0,2})/g;
 			let offset = 0;
 			for (const match of text.matchAll(pattern)) {
 				const value = match[0];
@@ -1170,7 +1180,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			el.dataset.role = message.role;
 			el.className = ["message", message.role].join(" ");
 			el.textContent = "";
-			if (message.role === "assistant") {
+			if (message.role === "assistant" || (message.role === "error" && !message.tool)) {
 				const header = document.createElement("div");
 				header.className = "message-header";
 				const avatar = document.createElement("img");
@@ -1400,6 +1410,134 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			selectMenuEl.querySelector(".select-option.active, .select-option")?.focus();
 		}
 
+		function closeCompletion() {
+			completion = null;
+			completionItems = [];
+			completionActiveIndex = 0;
+			completionMenuEl.hidden = true;
+			completionMenuBodyEl.textContent = "";
+		}
+
+		function renderCompletionMenu() {
+			completionMenuBodyEl.textContent = "";
+			if (!completion || completionItems.length === 0) {
+				completionMenuEl.hidden = true;
+				return;
+			}
+			const prefix = completion.kind === "file" ? "@" : "/";
+			completionItems.forEach((item, index) => {
+				const button = document.createElement("button");
+				button.type = "button";
+				button.className = ["completion-item", index === completionActiveIndex ? "active" : ""].filter(Boolean).join(" ");
+				const label = document.createElement("span");
+				label.className = "completion-item-label";
+				label.textContent = prefix + item.value;
+				button.appendChild(label);
+				if (item.description) {
+					const description = document.createElement("span");
+					description.className = "completion-item-description";
+					description.textContent = item.description;
+					button.appendChild(description);
+				}
+				button.addEventListener("click", () => acceptCompletion(index));
+				completionMenuBodyEl.appendChild(button);
+			});
+			completionMenuEl.hidden = false;
+		}
+
+		function moveCompletion(delta) {
+			if (completionItems.length === 0) return;
+			completionActiveIndex = (completionActiveIndex + delta + completionItems.length) % completionItems.length;
+			renderCompletionMenu();
+			const activeEl = completionMenuBodyEl.children[completionActiveIndex];
+			if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
+		}
+
+		function acceptCompletion(index) {
+			if (!completion) return;
+			const item = completionItems[index === undefined ? completionActiveIndex : index];
+			if (!item) return;
+			const prefix = completion.kind === "file" ? "@" : "/";
+			const insert = prefix + item.value + " ";
+			const caret = inputEl.selectionStart;
+			inputEl.value = inputEl.value.slice(0, completion.tokenStart) + insert + inputEl.value.slice(caret);
+			const newCaret = completion.tokenStart + insert.length;
+			inputEl.setSelectionRange(newCaret, newCaret);
+			closeCompletion();
+			inputEl.focus();
+		}
+
+		function loadSlashCommands() {
+			if (slashCommandsCache) return Promise.resolve(slashCommandsCache);
+			return call("listCommands", {})
+				.then((commands) => {
+					slashCommandsCache = Array.isArray(commands) ? commands : [];
+					return slashCommandsCache;
+				})
+				.catch(() => {
+					slashCommandsCache = [];
+					return slashCommandsCache;
+				});
+		}
+
+		function filterSlashCommands(query) {
+			const needle = query.toLowerCase();
+			completionItems = slashCommandsCache
+				.filter((command) => command.name.toLowerCase().indexOf(needle) !== -1)
+				.slice(0, 50)
+				.map((command) => ({ value: command.name, description: command.description || "" }));
+			renderCompletionMenu();
+		}
+
+		function scheduleFileQuery() {
+			if (fileQueryTimer !== null) window.clearTimeout(fileQueryTimer);
+			fileQueryTimer = window.setTimeout(() => {
+				fileQueryTimer = null;
+				if (!completion || completion.kind !== "file") return;
+				const seq = ++completionRequestSeq;
+				call("listFiles", { query: completion.query })
+					.then((files) => {
+						if (seq !== completionRequestSeq || !completion || completion.kind !== "file") return;
+						completionItems = (Array.isArray(files) ? files : []).map((file) => ({ value: file.path, description: "" }));
+						renderCompletionMenu();
+					})
+					.catch(() => {});
+			}, 150);
+		}
+
+		function updateCompletion() {
+			if (imeComposing) return;
+			const caret = inputEl.selectionStart;
+			if (caret !== inputEl.selectionEnd) {
+				closeCompletion();
+				return;
+			}
+			const before = inputEl.value.slice(0, caret);
+			const slashMatch = before.match(/^\\/([^\\s]*)$/);
+			if (slashMatch) {
+				completion = { kind: "command", tokenStart: 0, query: slashMatch[1] };
+				completionActiveIndex = 0;
+				if (slashCommandsCache) {
+					filterSlashCommands(slashMatch[1]);
+				} else {
+					completionMenuEl.hidden = true;
+					void loadSlashCommands().then(() => {
+						if (completion && completion.kind === "command") filterSlashCommands(completion.query);
+					});
+				}
+				return;
+			}
+			const atMatch = before.match(/(?:^|\\s)@([^\\s@]*)$/);
+			if (atMatch) {
+				const query = atMatch[1];
+				completion = { kind: "file", tokenStart: caret - query.length - 1, query };
+				completionActiveIndex = 0;
+				scheduleFileQuery();
+				return;
+			}
+			closeCompletion();
+		}
+
 		function resetPromptHistoryNavigation() {
 			promptHistoryCursor = undefined;
 			draftBeforePromptHistory = "";
@@ -1556,6 +1694,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		function send(streamingBehavior) {
 			const text = inputEl.value.trim();
 			if (!text) return;
+			closeCompletion();
 			inputEl.value = "";
 			resetPromptHistoryNavigation();
 			notify("send", { text, streamingBehavior });
@@ -1614,11 +1753,37 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (!selectMenuEl.hidden && !selectMenuEl.contains(target) && !modeEl.contains(target) && !approvalModeEl.contains(target)) {
 				closeSelectMenu();
 			}
+			if (completion && !completionMenuEl.contains(target) && target !== inputEl) {
+				closeCompletion();
+			}
 		});
 		window.addEventListener("resize", () => {
 			closeSelectMenu();
+			closeCompletion();
 		});
 		inputEl.addEventListener("keydown", (event) => {
+			if (completion && !completionMenuEl.hidden) {
+				if (event.key === "ArrowDown") {
+					event.preventDefault();
+					moveCompletion(1);
+					return;
+				}
+				if (event.key === "ArrowUp") {
+					event.preventDefault();
+					moveCompletion(-1);
+					return;
+				}
+				if (event.key === "Enter" || event.key === "Tab") {
+					event.preventDefault();
+					acceptCompletion();
+					return;
+				}
+				if (event.key === "Escape") {
+					event.preventDefault();
+					closeCompletion();
+					return;
+				}
+			}
 			if (event.key === "Enter" && event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
 				event.preventDefault();
 				send("followUp");
@@ -1639,7 +1804,36 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				navigatePromptHistory("next");
 			}
 		});
-		inputEl.addEventListener("input", resetPromptHistoryNavigation);
+		inputEl.addEventListener("input", () => {
+			resetPromptHistoryNavigation();
+			updateCompletion();
+		});
+		inputEl.addEventListener("compositionstart", () => {
+			imeComposing = true;
+		});
+		inputEl.addEventListener("compositionend", () => {
+			imeComposing = false;
+			updateCompletion();
+		});
+		composerResizeEl.addEventListener("pointerdown", (event) => {
+			event.preventDefault();
+			const startY = event.clientY;
+			const startHeight = inputEl.getBoundingClientRect().height;
+			composerResizeEl.setPointerCapture(event.pointerId);
+			inputEl.style.maxHeight = "none";
+			const onMove = (moveEvent) => {
+				const next = Math.min(116, Math.max(58, startHeight + (startY - moveEvent.clientY)));
+				inputEl.style.height = String(Math.round(next)).concat("px");
+			};
+			const onEnd = () => {
+				composerResizeEl.removeEventListener("pointermove", onMove);
+				composerResizeEl.removeEventListener("pointerup", onEnd);
+				composerResizeEl.removeEventListener("pointercancel", onEnd);
+			};
+			composerResizeEl.addEventListener("pointermove", onMove);
+			composerResizeEl.addEventListener("pointerup", onEnd);
+			composerResizeEl.addEventListener("pointercancel", onEnd);
+		});
 
 		window.addEventListener("message", (event) => {
 			const envelope = event.data;

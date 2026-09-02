@@ -39,6 +39,15 @@ export interface ModelStatus {
 	detail: string;
 }
 
+export interface FileMentionItem {
+	path: string;
+}
+
+export interface SlashCommandItem {
+	name: string;
+	description?: string;
+}
+
 export interface SessionSummary {
 	path: string;
 	label: string;
@@ -84,6 +93,8 @@ export interface WebviewRequestParams {
 	new: Record<string, never>;
 	selectModel: Record<string, never>;
 	showSessionPicker: Record<string, never>;
+	listFiles: { query: string };
+	listCommands: Record<string, never>;
 	clearQueue: Record<string, never>;
 	switchSession: { path: string };
 	setPermissionMode: { permissionMode: PermissionMode };
@@ -137,9 +148,14 @@ export function parseWebviewMessage(value: unknown): WebviewRequestEnvelope | un
 		method === "new" ||
 		method === "selectModel" ||
 		method === "showSessionPicker" ||
+		method === "listCommands" ||
 		method === "clearQueue"
 	) {
 		return { kind: "request", id, request: { method, params: {} } };
+	}
+
+	if (method === "listFiles" && isString(params.query)) {
+		return { kind: "request", id, request: { method, params: { query: params.query } } };
 	}
 
 	if (method === "send" && isString(params.text)) {

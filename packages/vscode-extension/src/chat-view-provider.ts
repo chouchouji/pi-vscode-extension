@@ -1,3 +1,4 @@
+import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import * as vscode from "vscode";
 import { runLoginFlow, runLogoutFlow } from "./auth-flow.ts";
@@ -314,12 +315,14 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async openFileReference(path: string, line: number | undefined, character: number | undefined) {
-		const trimmed = path.trim().replace(/^@/, "");
-		if (!trimmed) {
+		const trimmed = path.trim();
+		// Strip exactly one leading "@" mention sigil; real "@" paths are written "@@path".
+		const reference = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+		if (!reference) {
 			return;
 		}
 
-		const uri = vscode.Uri.file(isAbsolute(trimmed) ? trimmed : resolve(getWorkspaceCwd(), trimmed));
+		const uri = vscode.Uri.file(isAbsolute(reference) ? reference : resolve(getWorkspaceCwd(), reference));
 		const editor = await vscode.window.showTextDocument(uri, { preview: true });
 		if (line === undefined) {
 			return;
@@ -336,9 +339,35 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			return [];
 		}
 		const sanitized = query.replace(/[*?[\]{}]/g, "").trim();
-		const pattern = sanitized ? `**/*${sanitized}*` : "**/*";
+		// Match any path segment so folder queries find their contents. Use explicit
+		// brace branches: ripgrep drops empty alternates like `{,/**}`.
+		const pattern = sanitized ? `{**/*${sanitized}*,**/*${sanitized}*/**}` : "**/*";
 		const uris = await vscode.workspace.findFiles(pattern, "{**/node_modules/**,**/.git/**}", 50);
-		return uris.map((uri) => ({ path: vscode.workspace.asRelativePath(uri, false) }));
+		const items: FileMentionItem[] = [];
+		const seen = new Set<string>();
+		const lowerQuery = sanitized.toLowerCase();
+		for (const uri of uris) {
+			const path = vscode.workspace.asRelativePath(uri, false);
+			// findFiles returns files only; also surface ancestor folders matching the query.
+			if (lowerQuery) {
+				const segments = path.split("/");
+				for (let i = 0; i < segments.length - 1; i++) {
+					if (!segments[i].toLowerCase().includes(lowerQuery)) {
+						continue;
+					}
+					const dirPath = `${segments.slice(0, i + 1).join("/")}/`;
+					if (!seen.has(dirPath)) {
+						seen.add(dirPath);
+						items.push({ path: dirPath });
+					}
+				}
+			}
+			if (!seen.has(path)) {
+				seen.add(path);
+				items.push({ path });
+			}
+		}
+		return items.slice(0, 50);
 	}
 
 	private async listCommands(): Promise<SlashCommandItem[]> {
@@ -353,8 +382,58 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		const service = await this.ensureService();
-		await service.prompt(trimmed, streamingBehavior);
+		await service.prompt(await this.expandFileMentions(trimmed), streamingBehavior);
 		await this.refreshSessions();
+	}
+
+	// Expand "@path" mentions into file contents before the prompt reaches the
+	// model: only tokens that resolve to real workspace files are expanded, so
+	// decorators like `@Component` or emails are never mistaken for paths.
+	// "@@path" is the escaped form of a real path starting with "@".
+	private async expandFileMentions(text: string): Promise<string> {
+		// Mentions inside code spans/blocks are literal text, not references.
+		const searchable = text.replace(/```[\s\S]*?(?:```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
+		const files: { path: string; content: string }[] = [];
+		const seen = new Set<string>();
+		for (const match of searchable.matchAll(/(?:^|\s)(@@?)(\S+)/g)) {
+			let candidate = match[2];
+			// "@@path" is the escaped form of a real path starting with "@".
+			const prefix = match[1] === "@@" ? "@" : "";
+			// Trim trailing prose punctuation (e.g. "@foo.ts,") until it resolves.
+			while (candidate) {
+				const reference = prefix + candidate;
+				const absolutePath = isAbsolute(reference) ? reference : resolve(getWorkspaceCwd(), reference);
+				const content = await this.readMentionFile(absolutePath);
+				if (content !== undefined) {
+					if (!seen.has(absolutePath)) {
+						seen.add(absolutePath);
+						files.push({ path: absolutePath, content });
+					}
+					break;
+				}
+				candidate = candidate.replace(/[.,;:!?，。；：！？、)\]]+$/, "");
+			}
+		}
+		if (files.length === 0) {
+			return text;
+		}
+		const blocks = files.map((file) => `<file name="${file.path}">\n${file.content}\n</file>`);
+		return `${blocks.join("\n")}\n\n${text}`;
+	}
+
+	private async readMentionFile(absolutePath: string): Promise<string | undefined> {
+		try {
+			const stats = await stat(absolutePath);
+			// Skip directories, empty files, and files too large to inline.
+			if (!stats.isFile() || stats.size === 0 || stats.size > 512 * 1024) {
+				return undefined;
+			}
+			const content = await readFile(absolutePath, "utf-8");
+			// Binary content does not belong in the prompt.
+			return content.includes("\0") ? undefined : content;
+		} catch {
+			return undefined;
+		}
 	}
 
 	private async switchSession(path: string) {

@@ -1,5 +1,5 @@
 export function getWebviewStyles(): string {
-	return `		body {
+  return `		body {
 			padding: 0;
 			margin: 0;
 			color: var(--vscode-foreground);
@@ -443,7 +443,7 @@ export function getWebviewStyles(): string {
 			align-items: center;
 			justify-content: space-between;
 			gap: 8px;
-			margin: 8px 0 -8px;
+			margin: 8px 0 0px;
 			padding: 4px 8px;
 			border: 1px solid var(--vscode-panel-border);
 			border-bottom: 0;
@@ -454,6 +454,67 @@ export function getWebviewStyles(): string {
 		}
 		.code-header + pre {
 			margin-top: 0;
+		}
+		.mermaid-diagram {
+			box-sizing: border-box;
+			position: relative;
+			max-width: 100%;
+			padding: 10px;
+			border: 1px solid var(--vscode-panel-border);
+			overflow: hidden;
+			background: var(--vscode-textCodeBlock-background);
+			text-align: center;
+			cursor: grab;
+			user-select: none;
+			touch-action: none;
+		}
+		.mermaid-diagram.mermaid-panning {
+			cursor: grabbing;
+		}
+		.code-header + .mermaid-diagram {
+			margin-top: 0;
+		}
+		.mermaid-diagram svg {
+			max-width: 100%;
+			height: auto;
+			transform-origin: 0 0;
+		}
+		.mermaid-zoom-controls {
+			position: absolute;
+			bottom: 6px;
+			right: 6px;
+			display: flex;
+			gap: 4px;
+		}
+		.mermaid-zoom-button {
+			min-width: 22px;
+			height: 22px;
+			padding: 0 6px;
+			border: 1px solid var(--vscode-panel-border);
+			background: var(--vscode-button-secondaryBackground);
+			color: var(--vscode-button-secondaryForeground);
+			cursor: pointer;
+			font: inherit;
+			font-size: 12px;
+			line-height: 1;
+		}
+		.mermaid-zoom-button:hover {
+			background: var(--vscode-button-secondaryHoverBackground);
+		}
+		.mermaid-status {
+			margin: 8px 0;
+			padding: 10px;
+			border: 1px solid var(--vscode-panel-border);
+			background: var(--vscode-textCodeBlock-background);
+			color: var(--vscode-descriptionForeground);
+			font-family: var(--vscode-font-family);
+			font-size: 0.9em;
+		}
+		.code-header + .mermaid-status {
+			margin-top: 0;
+		}
+		.mermaid-status-error {
+			color: var(--vscode-errorForeground);
 		}
 		.code-section {
 			margin: 8px 0;

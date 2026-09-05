@@ -1,4 +1,10 @@
-export function getWebviewScript(highlighterScriptUri: string, scriptNonce: string, avatarUri: string): string {
+export function getWebviewScript(
+	highlighterScriptUri: string,
+	mermaidScriptUri: string,
+	scriptNonce: string,
+	styleNonce: string,
+	avatarUri: string,
+): string {
 	return `			const vscode = acquireVsCodeApi();
 		const assistantAvatarUri = ${JSON.stringify(avatarUri)};
 		let nextRequestId = 0;
@@ -29,6 +35,18 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 		const shikiScriptUri = ${JSON.stringify(highlighterScriptUri)};
 		const shikiScriptNonce = ${JSON.stringify(scriptNonce)};
+		const mermaidScriptUri = ${JSON.stringify(mermaidScriptUri)};
+		const mermaidStyleNonce = ${JSON.stringify(styleNonce)};
+		// Mermaid creates its <style> element via document.createElement before we can
+		// post-process the SVG, so stamp the style nonce on dynamically created styles.
+		const originalCreateElement = document.createElement.bind(document);
+		document.createElement = function (tagName, options) {
+			const element = originalCreateElement(tagName, options);
+			if (String(tagName).toLowerCase() === "style") {
+				element.nonce = mermaidStyleNonce;
+			}
+			return element;
+		};
 			const emptyStateEl = document.getElementById("emptyState");
 			const messagesEl = document.getElementById("messages");
 			const approvalsEl = document.getElementById("approvals");
@@ -73,6 +91,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		let completionRequestSeq = 0;
 		let imeComposing = false;
 		let highlighterLoadPromise;
+		let mermaidLoadPromise;
 		let userPromptHistory = [];
 		let promptHistoryCursor;
 		let draftBeforePromptHistory = "";
@@ -208,6 +227,33 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			return highlighterLoadPromise;
 		}
 
+		function getPiMermaid() {
+			return window.piMermaid;
+		}
+
+		function loadMermaidRenderer() {
+			const existing = getPiMermaid();
+			if (existing) {
+				return Promise.resolve(existing);
+			}
+			mermaidLoadPromise ||= new Promise((resolve, reject) => {
+				const script = document.createElement("script");
+				script.src = mermaidScriptUri;
+				script.nonce = shikiScriptNonce;
+				script.addEventListener("load", () => {
+					const loaded = getPiMermaid();
+					if (loaded) {
+						resolve(loaded);
+					} else {
+						reject(new Error("Mermaid renderer did not initialize."));
+					}
+				});
+				script.addEventListener("error", () => reject(new Error("Failed to load Mermaid renderer.")));
+				document.head.appendChild(script);
+			});
+			return mermaidLoadPromise;
+		}
+
 		function isDarkTheme() {
 			const rawColor = getComputedStyle(document.body).getPropertyValue("--vscode-editor-background");
 			const match = rawColor.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
@@ -300,11 +346,11 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		function drawCodeCanvas(pre, canvas) {
 			const code = pre.querySelector("code");
 			if (!code) {
-				return;
+				return false;
 			}
 			const lineEls = Array.from(code.querySelectorAll(".line"));
 			if (lineEls.length === 0) {
-				return;
+				return false;
 			}
 
 			const codeStyle = getComputedStyle(code);
@@ -319,7 +365,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 			const measureContext = canvas.getContext("2d");
 			if (!measureContext) {
-				return;
+				return false;
 			}
 
 			for (const line of lineEls) {
@@ -348,7 +394,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 
 			const ctx = canvas.getContext("2d");
 			if (!ctx) {
-				return;
+				return false;
 			}
 			ctx.scale(ratio, ratio);
 			ctx.textBaseline = "alphabetic";
@@ -372,6 +418,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				}
 			});
 			canvas.dataset.piTokenColors = Array.from(sampledColors).slice(0, 16).join(",");
+			return true;
 		}
 
 		function renderCodeCanvas(pre) {
@@ -381,12 +428,16 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 			const canvas = document.createElement("canvas");
 			canvas.className = "code-canvas";
-			pre.appendChild(canvas);
 			pre.classList.add("canvas-code-block");
-			code.classList.add("canvas-code-source");
-			const draw = () => drawCodeCanvas(pre, canvas);
-			requestAnimationFrame(draw);
-			setTimeout(draw, 100);
+			pre.appendChild(canvas);
+			requestAnimationFrame(() => {
+				if (drawCodeCanvas(pre, canvas)) {
+					code.classList.add("canvas-code-source");
+				} else {
+					canvas.remove();
+					pre.classList.remove("canvas-code-block");
+				}
+			});
 		}
 
 		function shouldRenderAsDiff(text) {
@@ -597,9 +648,149 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			return tool.title || tool.name;
 		}
 
+		function setupMermaidPanZoom(container, diagram) {
+			const minScale = 0.2;
+			const maxScale = 8;
+			let scale = 1;
+			let translateX = 0;
+			let translateY = 0;
+			let dragPointerId = -1;
+			let dragStartX = 0;
+			let dragStartY = 0;
+			let panStartX = 0;
+			let panStartY = 0;
+
+			function applyTransform() {
+				diagram.style.transform = "translate(" + translateX + "px, " + translateY + "px) scale(" + scale + ")";
+			}
+
+			function setScale(nextScale, focusX, focusY) {
+				const bounded = Math.min(maxScale, Math.max(minScale, nextScale));
+				const ratio = bounded / scale;
+				translateX = focusX - (focusX - translateX) * ratio;
+				translateY = focusY - (focusY - translateY) * ratio;
+				scale = bounded;
+				applyTransform();
+			}
+
+			function zoomFromCenter(nextScale) {
+				setScale(nextScale, container.clientWidth / 2, container.clientHeight / 2);
+			}
+
+			container.addEventListener("wheel", (event) => {
+				event.preventDefault();
+				const rect = container.getBoundingClientRect();
+				const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+				setScale(scale * zoomFactor, event.clientX - rect.left, event.clientY - rect.top);
+			}, { passive: false });
+
+			container.addEventListener("pointerdown", (event) => {
+				if (event.button !== 0 || dragPointerId !== -1) {
+					return;
+				}
+				dragPointerId = event.pointerId;
+				dragStartX = event.clientX;
+				dragStartY = event.clientY;
+				panStartX = translateX;
+				panStartY = translateY;
+				container.setPointerCapture(event.pointerId);
+				container.classList.add("mermaid-panning");
+				event.preventDefault();
+			});
+
+			container.addEventListener("pointermove", (event) => {
+				if (event.pointerId !== dragPointerId) {
+					return;
+				}
+				translateX = panStartX + (event.clientX - dragStartX);
+				translateY = panStartY + (event.clientY - dragStartY);
+				applyTransform();
+			});
+
+			function endDrag(event) {
+				if (event.pointerId !== dragPointerId) {
+					return;
+				}
+				dragPointerId = -1;
+				container.classList.remove("mermaid-panning");
+				const moved = Math.abs(event.clientX - dragStartX) > 2 || Math.abs(event.clientY - dragStartY) > 2;
+				if (moved) {
+					const swallowClick = (click) => {
+						click.preventDefault();
+						click.stopPropagation();
+					};
+					document.addEventListener("click", swallowClick, { capture: true, once: true });
+					window.setTimeout(() => document.removeEventListener("click", swallowClick, true), 0);
+				}
+			}
+			container.addEventListener("pointerup", endDrag);
+			container.addEventListener("pointercancel", endDrag);
+
+			const controls = document.createElement("div");
+			controls.className = "mermaid-zoom-controls";
+			controls.addEventListener("pointerdown", (event) => event.stopPropagation());
+			function appendZoomButton(label, title, onClick) {
+				const button = document.createElement("button");
+				button.type = "button";
+				button.className = "mermaid-zoom-button";
+				button.textContent = label;
+				button.title = title;
+				button.addEventListener("click", onClick);
+				controls.appendChild(button);
+			}
+			appendZoomButton("-", "Zoom out", () => zoomFromCenter(scale / 1.25));
+			appendZoomButton("+", "Zoom in", () => zoomFromCenter(scale * 1.25));
+			appendZoomButton("Reset", "Reset zoom", () => {
+				scale = 1;
+				translateX = 0;
+				translateY = 0;
+				applyTransform();
+			});
+			container.appendChild(controls);
+		}
+
 		function upgradeCodeBlock(pre, code, language) {
 			if ((language || "").toLowerCase() === "grep") {
 				pre.classList.add("code-highlight-fallback");
+				return;
+			}
+			if ((language || "").toLowerCase() === "mermaid") {
+				const status = document.createElement("div");
+				status.className = "mermaid-status";
+				status.textContent = "Rendering mermaid...";
+				pre.replaceWith(status);
+				void loadMermaidRenderer()
+					.then((renderer) => renderer.render(code, isDarkTheme()))
+					.then((svg) => {
+						const template = document.createElement("template");
+						template.innerHTML = svg.trim();
+						const diagram = template.content.firstElementChild;
+						if (!(diagram instanceof SVGElement) || diagram.tagName.toLowerCase() !== "svg") {
+							status.textContent = "Mermaid rendering failed";
+							status.classList.add("mermaid-status-error");
+							return;
+						}
+						// The nonce value is hidden during serialization, so the SVG carries an
+						// empty nonce and its <style> is blocked on insertion. Re-create the
+						// styles in <head> with the real nonce; mermaid scopes all rules by the
+						// unique diagram id, so hoisting is safe.
+						for (const styleEl of Array.from(diagram.querySelectorAll("style"))) {
+							const hoisted = document.createElement("style");
+							hoisted.nonce = mermaidStyleNonce;
+							hoisted.textContent = styleEl.textContent;
+							document.head.appendChild(hoisted);
+							styleEl.remove();
+						}
+						const container = document.createElement("div");
+						container.className = "mermaid-diagram";
+						container.appendChild(diagram);
+						setupMermaidPanZoom(container, diagram);
+						status.replaceWith(container);
+					})
+					.catch(() => {
+						status.textContent = "Mermaid rendering failed";
+						status.classList.add("mermaid-status-error");
+					});
 				return;
 			}
 			const existingClasses = Array.from(pre.classList);
@@ -634,7 +825,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				});
 		}
 
-		function appendCodeBlock(parent, code, language) {
+		function appendCodeBlock(parent, code, language, deferHighlight) {
 			if (!code.trim()) {
 				return;
 			}
@@ -686,7 +877,9 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			appendHighlightedCode(codeEl, code, language);
 			pre.appendChild(codeEl);
 			container.appendChild(pre);
-			upgradeCodeBlock(pre, code, language);
+			if (!deferHighlight) {
+				upgradeCodeBlock(pre, code, language);
+			}
 			if (isLong) {
 				parent.appendChild(container);
 			}
@@ -739,7 +932,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		}
 
 		function appendInline(parent, text) {
-			const pattern = /(\\\`[^\\\`]+\\\`|\\[[^\\]\\n]+\\]\\((https?:\\/\\/[^)\\s]+)\\)|@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+(?![\\/A-Za-z0-9._-])|(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+|v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?|(?:\\.{1,2}\\/|\\/)?(?:[A-Za-z0-9_.@()-]+\\/)*[A-Za-z0-9_.@()-]+\\.[A-Za-z0-9]+(?::[0-9]+){0,2})/g;
+			const pattern = /(\\\`[^\\\`]+\\\`|\\[[^\\]\\n]+\\]\\((https?:\\/\\/[^)\\s]+)\\)|\\*\\*[^*\\n]+\\*\\*|\\*[^*\\n]+\\*|@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+(?![\\/A-Za-z0-9._-])|(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+|v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?|(?:\\.{1,2}\\/|\\/)?(?:[A-Za-z0-9_.@()-]+\\/)*[A-Za-z0-9_.@()-]+\\.[A-Za-z0-9]+(?::[0-9]+){0,2})/g;
 			let offset = 0;
 			for (const match of text.matchAll(pattern)) {
 				const value = match[0];
@@ -756,6 +949,14 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 					link.href = value.slice(closeLabel + 2, -1);
 					link.textContent = value.slice(1, closeLabel);
 					parent.appendChild(link);
+				} else if (value.startsWith("**")) {
+					const strong = document.createElement("strong");
+					appendInline(strong, value.slice(2, -2));
+					parent.appendChild(strong);
+				} else if (value.startsWith("*")) {
+					const em = document.createElement("em");
+					appendInline(em, value.slice(1, -1));
+					parent.appendChild(em);
 				} else if (shouldRenderInlineCodeToken(value)) {
 					appendInlineCode(parent, value);
 				} else {
@@ -783,7 +984,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			);
 		}
 
-		function appendMarkdown(parent, text) {
+		function appendMarkdown(parent, text, streaming) {
 			const root = document.createElement("div");
 			root.className = "message-content";
 			const lines = text.split("\\n");
@@ -806,7 +1007,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 						index++;
 					}
 					if (index < lines.length) index++;
-					appendCodeBlock(root, codeLines.join("\\n"), fence[1] || "");
+					appendCodeBlock(root, codeLines.join("\\n"), fence[1] || "", streaming);
 					continue;
 				}
 
@@ -832,7 +1033,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 						quoteLines.push(lines[index].replace(/^\\s*>\\s?/, ""));
 						index++;
 					}
-					appendMarkdown(quote, quoteLines.join("\\n"));
+					appendMarkdown(quote, quoteLines.join("\\n"), streaming);
 					root.appendChild(quote);
 					continue;
 				}
@@ -1102,26 +1303,24 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		const pendingRenderIds = new Set();
 		let renderScheduled = false;
 
-		// Coalesce rapid streaming deltas into at most one render per animation
-		// frame; rendering every token rebuilds the whole message and stutters.
 		function scheduleRender(id) {
 			pendingRenderIds.add(id);
 			if (renderScheduled) return;
 			renderScheduled = true;
 			requestAnimationFrame(() => {
 				renderScheduled = false;
+				const pinnedToBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 40;
 				for (const pendingId of pendingRenderIds) {
 					const message = messageData.get(pendingId);
 					if (message) renderMessage(message);
 				}
 				pendingRenderIds.clear();
-				messagesEl.scrollTop = messagesEl.scrollHeight;
+				if (pinnedToBottom) {
+					messagesEl.scrollTop = messagesEl.scrollHeight;
+				}
 			});
 		}
 
-		// Typewriter smoothing: incoming deltas sit in a buffer and are revealed
-		// at a steady cadence. The reveal rate scales with the backlog so long
-		// bursts still catch up instead of lagging behind the model.
 		const streamBuffers = new Map();
 		let typewriterTimer = null;
 
@@ -1165,6 +1364,13 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			}
 		}
 
+		function stripFileBlocks(text) {
+			return text
+				.replace(/<file name="[^"]+">[\\s\\S]*?<\\/file>/g, "")
+				.replace(/\\n{3,}/g, "\\n\\n")
+				.trim();
+		}
+
 		function renderMessage(message) {
 			if (shouldHideMessage(message)) {
 				removeMessage(message.id);
@@ -1197,7 +1403,11 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (message.tool) {
 				renderToolMessage(el, message);
 			} else {
-				appendMarkdown(el, message.text || (message.working ? "..." : ""));
+				const rawText = message.text || (message.working ? "..." : "");
+				const displayText = message.role === "user" ? stripFileBlocks(rawText) : rawText;
+				if (displayText) {
+					appendMarkdown(el, displayText, Boolean(message.working));
+				}
 				if (message.role === "assistant" && !message.working && message.timestamp) {
 					const time = document.createElement("div");
 					time.className = "message-time";
@@ -1458,13 +1668,16 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			const item = completionItems[index === undefined ? completionActiveIndex : index];
 			if (!item) return;
 			const prefix = completion.kind === "file" ? "@" : "/";
-			const insert = prefix + item.value + " ";
+			const insert = prefix + item.value + (item.value.endsWith("/") ? "" : " ");
 			const caret = inputEl.selectionStart;
 			inputEl.value = inputEl.value.slice(0, completion.tokenStart) + insert + inputEl.value.slice(caret);
 			const newCaret = completion.tokenStart + insert.length;
 			inputEl.setSelectionRange(newCaret, newCaret);
 			closeCompletion();
 			inputEl.focus();
+			if (item.value.endsWith("/")) {
+				updateCompletion();
+			}
 		}
 
 		function loadSlashCommands() {
@@ -1527,7 +1740,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 				}
 				return;
 			}
-			const atMatch = before.match(/(?:^|\\s)@([^\\s@]*)$/);
+			const atMatch = before.match(/(?:^|\\s)@([^\\s]*)$/);
 			if (atMatch) {
 				const query = atMatch[1];
 				completion = { kind: "file", tokenStart: caret - query.length - 1, query };
@@ -1756,7 +1969,7 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 			if (completion && !completionMenuEl.contains(target) && target !== inputEl) {
 				closeCompletion();
 			}
-		});
+		}, true);
 		window.addEventListener("resize", () => {
 			closeSelectMenu();
 			closeCompletion();
@@ -1814,6 +2027,21 @@ export function getWebviewScript(highlighterScriptUri: string, scriptNonce: stri
 		inputEl.addEventListener("compositionend", () => {
 			imeComposing = false;
 			updateCompletion();
+		});
+		inputEl.addEventListener("click", () => {
+			updateCompletion();
+		});
+		inputEl.addEventListener("keyup", (event) => {
+			if (
+				event.key === "ArrowLeft" ||
+				event.key === "ArrowRight" ||
+				event.key === "Home" ||
+				event.key === "End" ||
+				event.key === "PageUp" ||
+				event.key === "PageDown"
+			) {
+				updateCompletion();
+			}
 		});
 		composerResizeEl.addEventListener("pointerdown", (event) => {
 			event.preventDefault();

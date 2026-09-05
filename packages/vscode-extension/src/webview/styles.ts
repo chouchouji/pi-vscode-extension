@@ -1,5 +1,5 @@
 export function getWebviewStyles(): string {
-  return `		body {
+	return `		body {
 			padding: 0;
 			margin: 0;
 			color: var(--vscode-foreground);
@@ -448,7 +448,7 @@ export function getWebviewStyles(): string {
 			border: 1px solid var(--vscode-panel-border);
 			border-bottom: 0;
 			color: var(--vscode-descriptionForeground);
-			background: var(--vscode-editorGroupHeader-tabsBackground);
+			background: var(--vscode-textCodeBlock-background);
 			font-family: var(--vscode-font-family);
 			font-size: 0.9em;
 		}
@@ -458,6 +458,7 @@ export function getWebviewStyles(): string {
 		.mermaid-diagram {
 			box-sizing: border-box;
 			position: relative;
+			min-height: 200px;
 			max-width: 100%;
 			padding: 10px;
 			border: 1px solid var(--vscode-panel-border);
@@ -478,6 +479,10 @@ export function getWebviewStyles(): string {
 			max-width: 100%;
 			height: auto;
 			transform-origin: 0 0;
+		}
+		.mermaid-diagram .cluster rect {
+			fill: var(--vscode-textCodeBlock-background) !important;
+			stroke: none !important;
 		}
 		.mermaid-zoom-controls {
 			position: absolute;
@@ -523,8 +528,25 @@ export function getWebviewStyles(): string {
 		}
 		.code-section > summary {
 			cursor: pointer;
+			display: flex;
+			align-items: center;
+		}
+		.code-section > summary::-webkit-details-marker {
+			display: none;
+		}
+		.code-section > summary::before {
+			content: "";
+			flex-shrink: 0;
+			margin: 0 2px 0 6px;
+			border-top: 4px solid transparent;
+			border-bottom: 4px solid transparent;
+			border-left: 5px solid var(--vscode-descriptionForeground);
+		}
+		.code-section[open] > summary::before {
+			transform: rotate(90deg);
 		}
 		.code-section .code-header {
+			flex: 1;
 			margin: 0;
 			border: 0;
 		}

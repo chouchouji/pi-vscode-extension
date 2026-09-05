@@ -2,6 +2,7 @@ export function getWebviewScript(
 	highlighterScriptUri: string,
 	mermaidScriptUri: string,
 	scriptNonce: string,
+	styleNonce: string,
 	avatarUri: string,
 ): string {
 	return `			const vscode = acquireVsCodeApi();
@@ -35,6 +36,17 @@ export function getWebviewScript(
 		const shikiScriptUri = ${JSON.stringify(highlighterScriptUri)};
 		const shikiScriptNonce = ${JSON.stringify(scriptNonce)};
 		const mermaidScriptUri = ${JSON.stringify(mermaidScriptUri)};
+		const mermaidStyleNonce = ${JSON.stringify(styleNonce)};
+		// Mermaid creates its <style> element via document.createElement before we can
+		// post-process the SVG, so stamp the style nonce on dynamically created styles.
+		const originalCreateElement = document.createElement.bind(document);
+		document.createElement = function (tagName, options) {
+			const element = originalCreateElement(tagName, options);
+			if (String(tagName).toLowerCase() === "style") {
+				element.nonce = mermaidStyleNonce;
+			}
+			return element;
+		};
 			const emptyStateEl = document.getElementById("emptyState");
 			const messagesEl = document.getElementById("messages");
 			const approvalsEl = document.getElementById("approvals");
@@ -757,6 +769,17 @@ export function getWebviewScript(
 							status.textContent = "Mermaid rendering failed";
 							status.classList.add("mermaid-status-error");
 							return;
+						}
+						// The nonce value is hidden during serialization, so the SVG carries an
+						// empty nonce and its <style> is blocked on insertion. Re-create the
+						// styles in <head> with the real nonce; mermaid scopes all rules by the
+						// unique diagram id, so hoisting is safe.
+						for (const styleEl of Array.from(diagram.querySelectorAll("style"))) {
+							const hoisted = document.createElement("style");
+							hoisted.nonce = mermaidStyleNonce;
+							hoisted.textContent = styleEl.textContent;
+							document.head.appendChild(hoisted);
+							styleEl.remove();
 						}
 						const container = document.createElement("div");
 						container.className = "mermaid-diagram";

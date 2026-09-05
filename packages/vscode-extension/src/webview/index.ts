@@ -28,7 +28,7 @@ export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}' ${webview.cspSource};">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource}; style-src 'nonce-${styleNonce}'; style-src-attr 'unsafe-inline'; script-src 'nonce-${scriptNonce}' ${webview.cspSource};">
 	<style nonce="${styleNonce}">
 ${getWebviewStyles()}
 	</style>
@@ -36,7 +36,7 @@ ${getWebviewStyles()}
 <body>
 ${getWebviewBody()}
 	<script nonce="${scriptNonce}">
-${getWebviewScript(highlighterScriptUri, mermaidScriptUri, scriptNonce, avatarUri)}
+${getWebviewScript(highlighterScriptUri, mermaidScriptUri, scriptNonce, styleNonce, avatarUri)}
 	</script>
 </body>
 </html>`;

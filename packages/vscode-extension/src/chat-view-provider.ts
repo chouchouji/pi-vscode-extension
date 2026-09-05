@@ -340,7 +340,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		}
 		const sanitized = query.replace(/[*?[\]{}]/g, "").trim();
 		// Match any path segment so folder queries find their contents. Use explicit
-		// brace branches: ripgrep drops empty alternates like `{,/**}`.
+		// brace branches: VS Code glob syntax does not support empty alternates like `{,/**}`.
 		const pattern = sanitized ? `{**/*${sanitized}*,**/*${sanitized}*/**}` : "**/*";
 		const uris = await vscode.workspace.findFiles(pattern, "{**/node_modules/**,**/.git/**}", 50);
 		const items: FileMentionItem[] = [];
@@ -403,6 +403,11 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			while (candidate) {
 				const reference = prefix + candidate;
 				const absolutePath = isAbsolute(reference) ? reference : resolve(getWorkspaceCwd(), reference);
+				const uri = vscode.Uri.file(absolutePath);
+				// Only expand files that are actually inside the current workspace.
+				if (!vscode.workspace.getWorkspaceFolder(uri)) {
+					break;
+				}
 				const content = await this.readMentionFile(absolutePath);
 				if (content !== undefined) {
 					if (!seen.has(absolutePath)) {
@@ -417,7 +422,10 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		if (files.length === 0) {
 			return text;
 		}
-		const blocks = files.map((file) => `<file name="${file.path}">\n${file.content}\n</file>`);
+		const blocks = files.map((file) => {
+			const name = vscode.workspace.asRelativePath(vscode.Uri.file(file.path), false);
+			return `<file name="${name}">\n${file.content}\n</file>`;
+		});
 		return `${blocks.join("\n")}\n\n${text}`;
 	}
 

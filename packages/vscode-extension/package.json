@@ -180,6 +180,7 @@
     "@earendil-works/pi-ai": "^0.81.1",
     "@earendil-works/pi-coding-agent": "^0.81.1",
     "@earendil-works/pi-mcp-adapter": "^0.81.1",
+    "mermaid": "11.17.2",
     "rattail": "1.0.18",
     "shiki": "3.12.2",
     "typebox": "1.1.38"

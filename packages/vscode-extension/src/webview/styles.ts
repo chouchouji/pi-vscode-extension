@@ -443,17 +443,83 @@ export function getWebviewStyles(): string {
 			align-items: center;
 			justify-content: space-between;
 			gap: 8px;
-			margin: 8px 0 -8px;
+			margin: 8px 0 0px;
 			padding: 4px 8px;
 			border: 1px solid var(--vscode-panel-border);
 			border-bottom: 0;
 			color: var(--vscode-descriptionForeground);
-			background: var(--vscode-editorGroupHeader-tabsBackground);
+			background: var(--vscode-textCodeBlock-background);
 			font-family: var(--vscode-font-family);
 			font-size: 0.9em;
 		}
 		.code-header + pre {
 			margin-top: 0;
+		}
+		.mermaid-diagram {
+			box-sizing: border-box;
+			position: relative;
+			min-height: 200px;
+			max-width: 100%;
+			padding: 10px;
+			border: 1px solid var(--vscode-panel-border);
+			overflow: hidden;
+			background: var(--vscode-textCodeBlock-background);
+			text-align: center;
+			cursor: grab;
+			user-select: none;
+			touch-action: none;
+		}
+		.mermaid-diagram.mermaid-panning {
+			cursor: grabbing;
+		}
+		.code-header + .mermaid-diagram {
+			margin-top: 0;
+		}
+		.mermaid-diagram svg {
+			max-width: 100%;
+			height: auto;
+			transform-origin: 0 0;
+		}
+		.mermaid-diagram .cluster rect {
+			fill: var(--vscode-textCodeBlock-background) !important;
+			stroke: none !important;
+		}
+		.mermaid-zoom-controls {
+			position: absolute;
+			bottom: 6px;
+			right: 6px;
+			display: flex;
+			gap: 4px;
+		}
+		.mermaid-zoom-button {
+			min-width: 22px;
+			height: 22px;
+			padding: 0 6px;
+			border: 1px solid var(--vscode-panel-border);
+			background: var(--vscode-button-secondaryBackground);
+			color: var(--vscode-button-secondaryForeground);
+			cursor: pointer;
+			font: inherit;
+			font-size: 12px;
+			line-height: 1;
+		}
+		.mermaid-zoom-button:hover {
+			background: var(--vscode-button-secondaryHoverBackground);
+		}
+		.mermaid-status {
+			margin: 8px 0;
+			padding: 10px;
+			border: 1px solid var(--vscode-panel-border);
+			background: var(--vscode-textCodeBlock-background);
+			color: var(--vscode-descriptionForeground);
+			font-family: var(--vscode-font-family);
+			font-size: 0.9em;
+		}
+		.code-header + .mermaid-status {
+			margin-top: 0;
+		}
+		.mermaid-status-error {
+			color: var(--vscode-errorForeground);
 		}
 		.code-section {
 			margin: 8px 0;
@@ -462,8 +528,25 @@ export function getWebviewStyles(): string {
 		}
 		.code-section > summary {
 			cursor: pointer;
+			display: flex;
+			align-items: center;
+		}
+		.code-section > summary::-webkit-details-marker {
+			display: none;
+		}
+		.code-section > summary::before {
+			content: "";
+			flex-shrink: 0;
+			margin: 0 2px 0 6px;
+			border-top: 4px solid transparent;
+			border-bottom: 4px solid transparent;
+			border-left: 5px solid var(--vscode-descriptionForeground);
+		}
+		.code-section[open] > summary::before {
+			transform: rotate(90deg);
 		}
 		.code-section .code-header {
+			flex: 1;
 			margin: 0;
 			border: 0;
 		}

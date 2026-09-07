@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-09-07
+
 ### Added
 
 - Added pan and zoom for mermaid diagrams in chat: drag to pan, mouse wheel or trackpad pinch to zoom around the cursor, and zoom in/out/reset buttons overlaid on the diagram.

@@ -23,7 +23,8 @@
 
 ### Fixed
 
-- Fixed mermaid diagrams rendering with black filled edge shapes and missing node/arrow styling: the webview CSP nonce caused `'unsafe-inline'` to be ignored, blocking the SVG's `<style>` element and inline styles; `style-src` now uses `'unsafe-inline'`.
+- Fixed mermaid diagrams rendering with black filled edge shapes and missing node/arrow styling: the webview CSP blocked the SVG's `<style>` elements and inline style attributes; `style-src` keeps the nonce while `style-src-attr 'unsafe-inline'` allows inline style attributes, dynamically created `<style>` elements are stamped with the style nonce via a `document.createElement` patch, and mermaid's in-SVG `<style>` elements are re-created inside the diagram container with the real nonce (serialization hides nonce values, so the originals arrive blocked).
+- Fixed mermaid `<style>` elements accumulating in `document.head` on every re-render or message removal; re-created styles now live inside the diagram container and are removed with it.
 - Fixed code blocks rendering blank for unsupported languages (e.g. mermaid); the DOM source is hidden only when the canvas draw succeeds.
 - Fixed user messages showing raw `<file>` blocks of expanded `@file` mentions.
 - Fixed code blocks flickering while streaming.

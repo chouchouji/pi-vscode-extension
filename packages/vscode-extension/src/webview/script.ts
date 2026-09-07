@@ -772,17 +772,18 @@ export function getWebviewScript(
 						}
 						// The nonce value is hidden during serialization, so the SVG carries an
 						// empty nonce and its <style> is blocked on insertion. Re-create the
-						// styles in <head> with the real nonce; mermaid scopes all rules by the
-						// unique diagram id, so hoisting is safe.
+						// styles inside the diagram container with the real nonce; mermaid
+						// scopes all rules by the unique diagram id, and the styles are
+						// removed together with the container on re-render or removal.
+						const container = document.createElement("div");
+						container.className = "mermaid-diagram";
 						for (const styleEl of Array.from(diagram.querySelectorAll("style"))) {
 							const hoisted = document.createElement("style");
 							hoisted.nonce = mermaidStyleNonce;
 							hoisted.textContent = styleEl.textContent;
-							document.head.appendChild(hoisted);
+							container.appendChild(hoisted);
 							styleEl.remove();
 						}
-						const container = document.createElement("div");
-						container.className = "mermaid-diagram";
 						container.appendChild(diagram);
 						setupMermaidPanZoom(container, diagram);
 						status.replaceWith(container);

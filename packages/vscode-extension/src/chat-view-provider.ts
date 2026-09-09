@@ -323,13 +323,20 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		}
 
 		const uri = vscode.Uri.file(isAbsolute(reference) ? reference : resolve(getWorkspaceCwd(), reference));
+		if (!vscode.workspace.getWorkspaceFolder(uri)) {
+			await vscode.window.showWarningMessage(`File reference is outside the current workspace: ${reference}`);
+			return;
+		}
 		const editor = await vscode.window.showTextDocument(uri, { preview: true });
 		if (line === undefined) {
 			return;
 		}
 
-		const targetLine = Math.max(0, Math.floor(line) - 1);
-		const targetCharacter = Math.max(0, Math.floor(character ?? 1) - 1);
+		const targetLine = Math.min(editor.document.lineCount - 1, Math.max(0, Math.floor(line) - 1));
+		const targetCharacter = Math.min(
+			editor.document.lineAt(targetLine).text.length,
+			Math.max(0, Math.floor(character ?? 1) - 1),
+		);
 		const position = new vscode.Position(targetLine, targetCharacter);
 		editor.selection = new vscode.Selection(position, position);
 	}

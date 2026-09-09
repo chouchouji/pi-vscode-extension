@@ -827,6 +827,9 @@ export function getWebviewScript(
 		}
 
 		function appendCodeBlock(parent, code, language, deferHighlight) {
+			const location = language.match(/(?:^|s)(?:title=)?["']?([^"'s]+.[A-Za-z0-9]+(?::[0-9]+){0,2})["']?$/);
+			const codeLanguage = location ? language.slice(0, location.index).trim() : language;
+			const fileReference = location ? parseFileReference(location[1]) : undefined;
 			if (!code.trim()) {
 				return;
 			}
@@ -836,13 +839,26 @@ export function getWebviewScript(
 			if (isLong) {
 				container.className = "code-section";
 			}
-			if (language || isLong) {
+			if (codeLanguage || fileReference || isLong) {
 				const header = document.createElement("div");
 				header.className = "code-header";
 				const label = document.createElement("span");
-				label.textContent = (language || "Code") + " · " + lineCount + " lines";
+				label.textContent = (codeLanguage || "Code") + " · " + lineCount + " lines";
 				header.appendChild(label);
-				if (language) {
+				if (fileReference) {
+					const locationLink = document.createElement("a");
+					locationLink.href = "#";
+					locationLink.className = "file-link code-location";
+					locationLink.textContent = location[1];
+					locationLink.title = "Open file";
+					locationLink.addEventListener("click", (event) => {
+						event.preventDefault();
+						event.stopPropagation();
+						notify("openFile", fileReference);
+					});
+					header.appendChild(locationLink);
+				}
+				if (codeLanguage) {
 					const copy = document.createElement("button");
 					copy.type = "button";
 					copy.className = "copy-code";
@@ -875,11 +891,11 @@ export function getWebviewScript(
 			}
 			const pre = document.createElement("pre");
 			const codeEl = document.createElement("code");
-			appendHighlightedCode(codeEl, code, language);
+				appendHighlightedCode(codeEl, code, codeLanguage);
 			pre.appendChild(codeEl);
 			container.appendChild(pre);
 			if (!deferHighlight) {
-				upgradeCodeBlock(pre, code, language);
+					upgradeCodeBlock(pre, code, codeLanguage);
 			}
 			if (isLong) {
 				parent.appendChild(container);
@@ -896,6 +912,16 @@ export function getWebviewScript(
 				notify("openFile", { path, line, character });
 			});
 			parent.appendChild(link);
+		}
+
+		function parseFileReference(value) {
+			const match = value.match(/^(.*?)(?::([0-9]+))?(?::([0-9]+))?$/);
+			if (!match) return { path: value };
+			return {
+				path: match[1],
+				line: match[2] ? Number(match[2]) : undefined,
+				character: match[3] ? Number(match[3]) : undefined,
+			};
 		}
 
 		function inlineCodeClassName(text) {
@@ -933,7 +959,7 @@ export function getWebviewScript(
 		}
 
 		function appendInline(parent, text) {
-			const pattern = /(\\\`[^\\\`]+\\\`|\\[[^\\]\\n]+\\]\\((https?:\\/\\/[^)\\s]+)\\)|\\*\\*[^*\\n]+\\*\\*|\\*[^*\\n]+\\*|@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+(?![\\/A-Za-z0-9._-])|(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+|v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?|(?:\\.{1,2}\\/|\\/)?(?:[A-Za-z0-9_.@()-]+\\/)*[A-Za-z0-9_.@()-]+\\.[A-Za-z0-9]+(?::[0-9]+){0,2})/g;
+			const pattern = /(\\\`[^\\\`]+\\\`|\\[[^\\]\\n]+\\]\\(([^)\\s]+)\\)|\\*\\*[^*\\n]+\\*\\*|\\*[^*\\n]+\\*|@[A-Za-z0-9._-]+\\/[A-Za-z0-9_-]+(?![\\/A-Za-z0-9._-])|(?:pi|editor|view)\\.[A-Za-z0-9_.\\/-]+|v?\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9._-]+)?|(?:\\.{1,2}\\/|\\/)?(?:[A-Za-z0-9_.@()-]+\\/)*[A-Za-z0-9_.@()-]+\\.[A-Za-z0-9]+(?::[0-9]+){0,2})/g;
 			let offset = 0;
 			for (const match of text.matchAll(pattern)) {
 				const value = match[0];
@@ -946,10 +972,16 @@ export function getWebviewScript(
 					appendInlineCode(parent, value.slice(1, -1));
 				} else if (value.startsWith("[")) {
 					const closeLabel = value.indexOf("](");
-					const link = document.createElement("a");
-					link.href = value.slice(closeLabel + 2, -1);
-					link.textContent = value.slice(1, closeLabel);
-					parent.appendChild(link);
+					const target = value.slice(closeLabel + 2, -1);
+					if (/^https?:\\/\\//i.test(target)) {
+						const link = document.createElement("a");
+						link.href = target;
+						link.textContent = value.slice(1, closeLabel);
+						parent.appendChild(link);
+					} else {
+						const reference = parseFileReference(target);
+						appendFileLink(parent, value.slice(1, closeLabel), reference.path, reference.line, reference.character);
+					}
 				} else if (value.startsWith("**")) {
 					const strong = document.createElement("strong");
 					appendInline(strong, value.slice(2, -2));
@@ -961,11 +993,8 @@ export function getWebviewScript(
 				} else if (shouldRenderInlineCodeToken(value)) {
 					appendInlineCode(parent, value);
 				} else {
-					const parts = value.split(":");
-					const path = parts[0];
-					const line = parts.length > 1 ? Number(parts[1]) : undefined;
-					const character = parts.length > 2 ? Number(parts[2]) : undefined;
-					appendFileLink(parent, value, path, line, character);
+					const reference = parseFileReference(value);
+					appendFileLink(parent, value, reference.path, reference.line, reference.character);
 				}
 				offset = index + value.length;
 			}
@@ -999,8 +1028,8 @@ export function getWebviewScript(
 				}
 
 				const fencePrefix = String.fromCharCode(96, 96, 96);
-				const fence = line.startsWith(fencePrefix) ? line.slice(fencePrefix.length).trim().match(/^(\\S*)/) : null;
-				if (fence) {
+					const fence = line.startsWith(fencePrefix) ? line.slice(fencePrefix.length).trim() : "";
+				if (line.startsWith(fencePrefix)) {
 					index++;
 					const codeLines = [];
 					while (index < lines.length && lines[index].trim() !== fencePrefix) {
@@ -1008,7 +1037,7 @@ export function getWebviewScript(
 						index++;
 					}
 					if (index < lines.length) index++;
-					appendCodeBlock(root, codeLines.join("\\n"), fence[1] || "", streaming);
+					appendCodeBlock(root, codeLines.join("\\n"), fence, streaming);
 					continue;
 				}
 

@@ -51,6 +51,9 @@ export interface PiAgentServiceOptions {
 	cwd: string;
 	agentDir?: string;
 	extensionPath: string;
+	extensionVersion: string;
+	mermaidVersion: string;
+	isDevelopment: boolean;
 	permissionMode: PermissionMode;
 	onEvent: (event: PiAgentServiceEvent) => void;
 	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
@@ -107,6 +110,9 @@ export class PiAgentService {
 	private readonly cwd: string;
 	private readonly agentDir?: string;
 	private readonly extensionPath: string;
+	private readonly extensionVersion: string;
+	private readonly mermaidVersion: string;
+	private readonly isDevelopment: boolean;
 	private permissionMode: PermissionMode;
 	private modelRuntimePromise: Promise<ModelRuntime> | undefined;
 	private readonly onEvent: (event: PiAgentServiceEvent) => void;
@@ -120,6 +126,9 @@ export class PiAgentService {
 		this.cwd = resolve(options.cwd);
 		this.agentDir = options.agentDir;
 		this.extensionPath = options.extensionPath;
+		this.extensionVersion = options.extensionVersion;
+		this.mermaidVersion = options.mermaidVersion;
+		this.isDevelopment = options.isDevelopment;
 		this.permissionMode = options.permissionMode;
 		this.onEvent = options.onEvent;
 		this.confirmApplyEdits = options.confirmApplyEdits;
@@ -388,7 +397,7 @@ export class PiAgentService {
 			settingsManager,
 			extensionFactories: [createMcpAdapter({ cwd: this.cwd })],
 			additionalSkillPaths: bundledSkillPaths,
-			appendSystemPrompt: this.getPermissionModeSystemPrompt(),
+			appendSystemPrompt: [...this.getPermissionModeSystemPrompt(), this.getEnvironmentSystemPrompt()],
 		});
 		await resourceLoader.reload();
 
@@ -482,6 +491,16 @@ export class PiAgentService {
 		}
 
 		return [];
+	}
+
+	private getEnvironmentSystemPrompt(): string {
+		const channel = this.isDevelopment ? "development" : "production";
+		const version = this.isDevelopment ? `${this.extensionVersion}-dev` : this.extensionVersion;
+		return [
+			`You are running inside the Pi VS Code extension v${version} (${channel} build).`,
+			`The chat view renders Mermaid diagrams with mermaid@${this.mermaidVersion} (securityLevel "strict").`,
+			"When writing Mermaid diagrams, use only syntax supported by that Mermaid version.",
+		].join("\n");
 	}
 
 	private disposeSession() {

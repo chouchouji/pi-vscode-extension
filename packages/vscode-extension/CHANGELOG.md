@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-09-15
+
 ### Fixed
 
 - Fixed the agent system prompt reporting `mermaid@unknown` in packaged builds: the VSIX staging script stripped `dependencies` from `package.json`, which is where the extension reads the bundled mermaid version at runtime; the staged manifest now keeps the `mermaid` entry.

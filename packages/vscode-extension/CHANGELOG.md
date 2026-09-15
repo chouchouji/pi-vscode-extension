@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-15
+
 ### Added
 
 - Added an environment note to the agent system prompt: it now includes the extension version (with a `-dev` suffix for development builds) and the bundled mermaid version, so the agent writes mermaid diagrams compatible with the chat renderer.

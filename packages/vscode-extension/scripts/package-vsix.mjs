@@ -84,10 +84,16 @@ try {
 	delete stagedPackageJson.dependencies;
 	delete stagedPackageJson.devDependencies;
 	delete stagedPackageJson.optionalDependencies;
+	// chat-view-provider.ts reads the bundled mermaid version from
+	// dependencies.mermaid at runtime, so keep just that entry.
+	const mermaidVersion = packageJson.dependencies?.mermaid;
+	if (typeof mermaidVersion === "string") {
+		stagedPackageJson.dependencies = { mermaid: mermaidVersion };
+	}
 	await writeFile(join(stagingRoot, "package.json"), `${JSON.stringify(stagedPackageJson, undefined, "\t")}\n`);
 
 	await removeStaleVsixArtifacts();
-	run("vsce", ["package", "--allow-missing-repository", "--out", outPath], stagingRoot);
+	run("vsce", ["package", "--allow-missing-repository", "--no-dependencies", "--out", outPath], stagingRoot);
 	console.log(`Packaged ${basename(outPath)}`);
 } finally {
 	await rm(stagingRoot, { recursive: true, force: true });

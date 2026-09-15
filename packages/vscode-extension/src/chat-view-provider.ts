@@ -28,6 +28,19 @@ import { getWebviewHtml } from "./webview/index.ts";
 type ModelQuickPickItem = vscode.QuickPickItem & ModelSelection;
 type SessionQuickPickItem = vscode.QuickPickItem & { sessionPath: string };
 
+interface ExtensionPackageInfo {
+	version: string;
+	mermaidVersion: string;
+}
+
+function readExtensionPackageInfo(packageJson: unknown): ExtensionPackageInfo {
+	const info = packageJson as { version?: unknown; dependencies?: Record<string, unknown> } | undefined;
+	return {
+		version: typeof info?.version === "string" ? info.version : "unknown",
+		mermaidVersion: typeof info?.dependencies?.mermaid === "string" ? info.dependencies.mermaid : "unknown",
+	};
+}
+
 export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	private view?: vscode.WebviewView;
 	private service?: PiAgentService;
@@ -35,10 +48,17 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	private readonly state: PiChatViewState;
 	private readonly extensionPath: string;
 	private readonly extensionUri: vscode.Uri;
+	private readonly extensionVersion: string;
+	private readonly mermaidVersion: string;
+	private readonly isDevelopment: boolean;
 
 	constructor(context: vscode.ExtensionContext) {
 		this.extensionPath = context.extensionPath;
 		this.extensionUri = context.extensionUri;
+		const packageInfo = readExtensionPackageInfo(context.extension.packageJSON);
+		this.extensionVersion = packageInfo.version;
+		this.mermaidVersion = packageInfo.mermaidVersion;
+		this.isDevelopment = context.extensionMode === vscode.ExtensionMode.Development;
 		this.state = new PiChatViewState(this.readPermissionMode());
 		this.approvalController = new EditApprovalController({
 			globalStorageUri: context.globalStorageUri,
@@ -246,6 +266,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			cwd: getWorkspaceCwd(),
 			agentDir: this.readAgentDir(),
 			extensionPath: this.extensionPath,
+			extensionVersion: this.extensionVersion,
+			mermaidVersion: this.mermaidVersion,
+			isDevelopment: this.isDevelopment,
 			permissionMode: this.state.currentPermissionMode,
 			onEvent: (event) => this.handleServiceEvent(event),
 			confirmApplyEdits: (request) => this.approvalController.confirmApplyEdits(request),

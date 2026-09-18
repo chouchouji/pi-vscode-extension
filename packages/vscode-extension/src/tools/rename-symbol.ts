@@ -3,7 +3,14 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
 import { planWorkspaceEditPreviews } from "./edit-planning.ts";
-import { errorResult, positionFromOneBased, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
+import {
+	approvalErrorResult,
+	errorResult,
+	positionFromOneBased,
+	resolveFileUri,
+	textResult,
+	toWorkspacePath,
+} from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 export function createRenameSymbolToolDefinition(options: VsCodeToolOptions): ToolDefinition {
@@ -41,7 +48,7 @@ export function createRenameSymbolToolDefinition(options: VsCodeToolOptions): To
 				newName,
 			);
 			if (!edit) {
-				return textResult("No rename edit was returned by VS Code.", "rename symbol");
+				return errorResult("No rename edit was returned by VS Code.", "rename symbol");
 			}
 
 			const files = await planWorkspaceEditPreviews(options.cwd, edit);
@@ -49,18 +56,18 @@ export function createRenameSymbolToolDefinition(options: VsCodeToolOptions): To
 				return errorResult(files, "rename symbol");
 			}
 			if (files.length === 0) {
-				return textResult("VS Code returned an empty rename edit.", "rename symbol");
+				return errorResult("VS Code returned an empty rename edit.", "rename symbol");
 			}
 
-			const approved = await options.confirmRenameSymbol({
+			const decision = await options.confirmRenameSymbol({
 				filePath: uri.fsPath,
 				line: params.line,
 				character: params.character,
 				newName,
 				files,
 			});
-			if (!approved) {
-				return errorResult("User rejected the symbol rename.", "rename symbol");
+			if (decision !== "approved") {
+				return approvalErrorResult(decision, "User rejected the symbol rename.", "rename symbol");
 			}
 
 			const applied = await vscode.workspace.applyEdit(edit);

@@ -3,7 +3,9 @@ import { resolve } from "node:path";
 import {
 	type AgentSession,
 	createAgentSession,
+	createEventBus,
 	DefaultResourceLoader,
+	type EventBusController,
 	getAgentDir,
 	getDefaultSessionDir,
 	ModelRuntime,
@@ -11,7 +13,7 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { createMcpAdapter } from "@earendil-works/pi-mcp-adapter";
+import { createMcpAdapter, MCP_STATUS_EVENT, type McpStatusSnapshot } from "@earendil-works/pi-mcp-adapter";
 import * as vscode from "vscode";
 import { AgentSessionEventMapper } from "./agent-service/agent-session-event-mapper.ts";
 import { createId } from "./agent-service/chat-message-format.ts";
@@ -27,6 +29,7 @@ import type {
 } from "./protocol.ts";
 import {
 	type ApplyEditsRequest,
+	type ApprovalDecision,
 	createApplyEditsToolDefinition,
 	createDefinitionToolDefinition,
 	createDeleteDirectoryToolDefinition,
@@ -56,11 +59,11 @@ export interface PiAgentServiceOptions {
 	isDevelopment: boolean;
 	permissionMode: PermissionMode;
 	onEvent: (event: PiAgentServiceEvent) => void;
-	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
-	confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
-	confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
-	confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<boolean>;
-	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
+	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<ApprovalDecision>;
+	confirmWriteFile: (request: WriteFileRequest) => Promise<ApprovalDecision>;
+	confirmDeleteFile: (request: DeleteFileRequest) => Promise<ApprovalDecision>;
+	confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<ApprovalDecision>;
+	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<ApprovalDecision>;
 }
 
 export interface ModelSelection {
@@ -115,12 +118,14 @@ export class PiAgentService {
 	private readonly isDevelopment: boolean;
 	private permissionMode: PermissionMode;
 	private modelRuntimePromise: Promise<ModelRuntime> | undefined;
+	private readonly eventBus: EventBusController;
+	private readonly reportedFailedMcpServers = new Set<string>();
 	private readonly onEvent: (event: PiAgentServiceEvent) => void;
-	private readonly confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
-	private readonly confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
-	private readonly confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
-	private readonly confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<boolean>;
-	private readonly confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
+	private readonly confirmApplyEdits: (request: ApplyEditsRequest) => Promise<ApprovalDecision>;
+	private readonly confirmWriteFile: (request: WriteFileRequest) => Promise<ApprovalDecision>;
+	private readonly confirmDeleteFile: (request: DeleteFileRequest) => Promise<ApprovalDecision>;
+	private readonly confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<ApprovalDecision>;
+	private readonly confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<ApprovalDecision>;
 
 	constructor(options: PiAgentServiceOptions) {
 		this.cwd = resolve(options.cwd);
@@ -143,14 +148,16 @@ export class PiAgentService {
 				this.running = running;
 			},
 		});
+		this.eventBus = createEventBus();
+		this.eventBus.on(MCP_STATUS_EVENT, (data) => this.handleMcpStatusSnapshot(data));
 	}
 
-	setPermissionMode(permissionMode: PermissionMode) {
+	async setPermissionMode(permissionMode: PermissionMode) {
 		if (this.permissionMode === permissionMode) {
 			return;
 		}
 		this.permissionMode = permissionMode;
-		this.disposeSession();
+		await this.disposeSession();
 	}
 
 	async refreshModelStatus() {
@@ -218,14 +225,14 @@ export class PiAgentService {
 	async newSession() {
 		const session = await this.ensureSession();
 		const sessionDir = session.sessionManager.getSessionDir();
-		this.disposeSession();
+		await this.disposeSession();
 		this.sessionManager = SessionManager.create(this.cwd, sessionDir);
 		await this.ensureSession();
 	}
 
 	async switchSession(path: string) {
 		const sessionDir = this.getSessionDir();
-		this.disposeSession();
+		await this.disposeSession();
 		this.sessionManager = SessionManager.open(path, sessionDir, this.cwd);
 		await this.ensureSession();
 	}
@@ -260,13 +267,23 @@ export class PiAgentService {
 		return [...templates, ...skills];
 	}
 
-	async prompt(text: string, streamingBehavior?: StreamingBehavior) {
-		const session = await this.ensureSession();
-		this.running = true;
-		this.onEvent({ type: "running", running: true });
+	async prompt(text: string, streamingBehavior?: StreamingBehavior, preflightResult?: (success: boolean) => void) {
+		let preflightSettled = false;
+		const settlePreflight = (success: boolean) => {
+			if (preflightSettled) {
+				return;
+			}
+			preflightSettled = true;
+			preflightResult?.(success);
+		};
 		try {
-			await session.prompt(text, { source: "interactive", streamingBehavior });
+			const session = await this.ensureSession();
+			this.running = true;
+			this.onEvent({ type: "running", running: true });
+			await session.prompt(text, { source: "interactive", streamingBehavior, preflightResult: settlePreflight });
+			settlePreflight(true);
 		} catch (error) {
+			settlePreflight(false);
 			this.onEvent({
 				type: "append",
 				message: {
@@ -288,13 +305,17 @@ export class PiAgentService {
 		if (!this.session || !this.running) {
 			return;
 		}
-		await this.session.abort();
-		this.running = false;
-		this.onEvent({ type: "running", running: false });
+		try {
+			await this.session.abort();
+		} finally {
+			this.running = false;
+			this.onEvent({ type: "running", running: false });
+		}
 	}
 
 	dispose() {
-		this.disposeSession();
+		void this.disposeSession();
+		this.eventBus.clear();
 	}
 
 	private getResolvedAgentDir(): string {
@@ -311,6 +332,9 @@ export class PiAgentService {
 			this.modelRuntimePromise = ModelRuntime.create({
 				authPath: agentDir ? resolve(agentDir, "auth.json") : undefined,
 				modelsPath: agentDir ? resolve(agentDir, "models.json") : undefined,
+			}).catch((error) => {
+				this.modelRuntimePromise = undefined;
+				throw error;
 			});
 		}
 		return this.modelRuntimePromise;
@@ -395,6 +419,7 @@ export class PiAgentService {
 			cwd: this.cwd,
 			agentDir,
 			settingsManager,
+			eventBus: this.eventBus,
 			extensionFactories: [createMcpAdapter({ cwd: this.cwd })],
 			additionalSkillPaths: bundledSkillPaths,
 			appendSystemPrompt: [...this.getPermissionModeSystemPrompt(), this.getEnvironmentSystemPrompt()],
@@ -417,6 +442,14 @@ export class PiAgentService {
 		await result.session.bindExtensions({
 			onError: (error) => {
 				console.warn(`Extension error (${error.extensionPath}): ${error.error}`);
+				this.onEvent({
+					type: "append",
+					message: {
+						id: createId("error"),
+						role: "error",
+						text: `Extension error (${error.extensionPath}): ${error.error}`,
+					},
+				});
 			},
 		});
 		result.session.setActiveToolsByName([
@@ -503,7 +536,46 @@ export class PiAgentService {
 		].join("\n");
 	}
 
-	private disposeSession() {
+	private handleMcpStatusSnapshot(data: unknown) {
+		const snapshot = data as McpStatusSnapshot | undefined;
+		if (!snapshot || !Array.isArray(snapshot.servers)) {
+			return;
+		}
+
+		const failedNames = new Set<string>();
+		for (const server of snapshot.servers) {
+			if (server.status !== "failed") {
+				continue;
+			}
+			failedNames.add(server.name);
+			if (this.reportedFailedMcpServers.has(server.name)) {
+				continue;
+			}
+			this.reportedFailedMcpServers.add(server.name);
+			this.onEvent({
+				type: "append",
+				message: {
+					id: createId("error"),
+					role: "error",
+					text: `MCP server "${server.name}" failed to connect; its tools are unavailable.`,
+				},
+			});
+		}
+		for (const name of this.reportedFailedMcpServers) {
+			if (!failedNames.has(name)) {
+				this.reportedFailedMcpServers.delete(name);
+			}
+		}
+	}
+
+	private async disposeSession() {
+		if (this.session && this.running) {
+			try {
+				await this.session.abort();
+			} catch (error) {
+				console.error("Pi session abort during dispose failed:", error);
+			}
+		}
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.session?.dispose();
@@ -523,7 +595,7 @@ export class PiAgentService {
 			});
 			return;
 		}
-		void this.refreshModelStatus();
+		void this.refreshModelStatus().catch((error) => console.error("Pi model status refresh failed:", error));
 	}
 }
 

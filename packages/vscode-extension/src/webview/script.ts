@@ -16,7 +16,9 @@ export function getWebviewScript(
 			return new Promise((resolve, reject) => {
 				const timeoutId = window.setTimeout(() => {
 					pendingRequests.delete(id);
-					reject(new Error("Pi request timed out."));
+					const error = new Error("Pi request timed out.");
+					error.timedOut = true;
+					reject(error);
 				}, requestTimeoutMs);
 				pendingRequests.set(id, { resolve, reject, timeoutId });
 				try {
@@ -30,7 +32,10 @@ export function getWebviewScript(
 		}
 
 		function notify(method, params) {
-			void call(method, params).catch((error) => console.error("Pi request failed:", error));
+			void call(method, params).catch((error) => {
+				console.error("Pi request failed:", error);
+				appendLocalErrorMessage("Pi request failed: " + (error instanceof Error ? error.message : String(error)));
+			});
 		}
 
 		const shikiScriptUri = ${JSON.stringify(highlighterScriptUri)};
@@ -1529,6 +1534,8 @@ export function getWebviewScript(
 			sendEl.hidden = false;
 			stopEl.disabled = !value;
 			stopEl.hidden = !value;
+			newEl.disabled = value;
+			modeEl.disabled = value;
 			runningHintEl.hidden = !value;
 			updateSessionTime();
 		}
@@ -1905,13 +1912,28 @@ export function getWebviewScript(
 			pendingQueueEl.appendChild(restore);
 		}
 
+		function appendLocalErrorMessage(text) {
+			const id = "local-error-" + String(++nextRequestId);
+			messageData.set(id, {
+				id,
+				role: "error",
+				text,
+			});
+			scheduleRender(id);
+		}
+
 		function send(streamingBehavior) {
 			const text = inputEl.value.trim();
 			if (!text) return;
 			closeCompletion();
 			inputEl.value = "";
 			resetPromptHistoryNavigation();
-			notify("send", { text, streamingBehavior });
+			call("send", { text, streamingBehavior }).catch((error) => {
+				inputEl.value = text;
+				resetPromptHistoryNavigation();
+				if (!error || !error.timedOut) return;
+				appendLocalErrorMessage(error instanceof Error ? error.message : String(error));
+			});
 		}
 
 		sendEl.addEventListener("click", () => send("steer"));

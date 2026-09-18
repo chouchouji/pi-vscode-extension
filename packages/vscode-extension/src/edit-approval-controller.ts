@@ -10,6 +10,7 @@ import type {
 } from "./protocol.ts";
 import type {
 	ApplyEditsRequest,
+	ApprovalDecision,
 	DeleteDirectoryRequest,
 	DeleteFileRequest,
 	RenameSymbolRequest,
@@ -17,21 +18,22 @@ import type {
 } from "./tools/index.ts";
 
 interface PendingApproval {
-	resolve: (approved: boolean) => void;
+	resolve: (decision: ApprovalDecision) => void;
 	review: () => Promise<void>;
 }
 
 interface EditApprovalControllerOptions {
 	globalStorageUri: vscode.Uri;
 	reveal: () => void;
-	post: (message: HostToWebviewMessage) => void;
+	// Returns false when the chat view is closed and the message went nowhere.
+	post: (message: HostToWebviewMessage) => boolean;
 }
 
 export class EditApprovalController {
 	private readonly pendingApprovals = new Map<string, PendingApproval>();
 	private readonly globalStorageUri: vscode.Uri;
 	private readonly reveal: () => void;
-	private readonly post: (message: HostToWebviewMessage) => void;
+	private readonly post: (message: HostToWebviewMessage) => boolean;
 	private readonly _approvals: ApprovalPrompt[] = [];
 	private _approvalMode: ApprovalMode = "ask";
 
@@ -52,13 +54,13 @@ export class EditApprovalController {
 	setApprovalMode(approvalMode: ApprovalMode) {
 		this._approvalMode = approvalMode;
 		if (approvalMode === "auto") {
-			this.resolvePendingApprovals(true);
+			this.resolvePendingApprovals("approved");
 		}
 	}
 
-	async confirmApplyEdits(request: ApplyEditsRequest): Promise<boolean> {
+	async confirmApplyEdits(request: ApplyEditsRequest): Promise<ApprovalDecision> {
 		if (this._approvalMode === "auto") {
-			return true;
+			return "approved";
 		}
 
 		const reviewFiles = await this.createReviewFiles(request.files);
@@ -89,9 +91,9 @@ export class EditApprovalController {
 		);
 	}
 
-	async confirmWriteFile(request: WriteFileRequest): Promise<boolean> {
+	async confirmWriteFile(request: WriteFileRequest): Promise<ApprovalDecision> {
 		if (this._approvalMode === "auto") {
-			return true;
+			return "approved";
 		}
 
 		const targetUri = vscode.Uri.file(request.filePath);
@@ -121,9 +123,9 @@ export class EditApprovalController {
 		);
 	}
 
-	async confirmDeleteFile(request: DeleteFileRequest): Promise<boolean> {
+	async confirmDeleteFile(request: DeleteFileRequest): Promise<ApprovalDecision> {
 		if (this._approvalMode === "auto") {
-			return true;
+			return "approved";
 		}
 
 		const targetUri = vscode.Uri.file(request.filePath);
@@ -145,9 +147,9 @@ export class EditApprovalController {
 		);
 	}
 
-	async confirmDeleteDirectory(request: DeleteDirectoryRequest): Promise<boolean> {
+	async confirmDeleteDirectory(request: DeleteDirectoryRequest): Promise<ApprovalDecision> {
 		if (this._approvalMode === "auto") {
-			return true;
+			return "approved";
 		}
 
 		const targetUri = vscode.Uri.file(request.directoryPath);
@@ -184,9 +186,9 @@ export class EditApprovalController {
 		);
 	}
 
-	async confirmRenameSymbol(request: RenameSymbolRequest): Promise<boolean> {
+	async confirmRenameSymbol(request: RenameSymbolRequest): Promise<ApprovalDecision> {
 		if (this._approvalMode === "auto") {
-			return true;
+			return "approved";
 		}
 
 		const reviewFiles = await this.createReviewFiles(request.files);
@@ -232,7 +234,7 @@ export class EditApprovalController {
 			return;
 		}
 
-		this.resolveApproval(id, action === "apply");
+		this.resolveApproval(id, action === "apply" ? "approved" : "rejected");
 	}
 
 	async handleApprovalBatchResponse(action: ApprovalBatchAction) {
@@ -247,11 +249,11 @@ export class EditApprovalController {
 			return;
 		}
 
-		this.resolvePendingApprovals(action === "apply");
+		this.resolvePendingApprovals(action === "apply" ? "approved" : "rejected");
 	}
 
 	rejectPendingApprovals() {
-		this.resolvePendingApprovals(false);
+		this.resolvePendingApprovals("cancelled");
 	}
 
 	private async createReviewFiles(files: readonly { filePath: string; proposedText: string }[]): Promise<
@@ -281,7 +283,7 @@ export class EditApprovalController {
 		return vscode.Uri.file(tempPath);
 	}
 
-	private requestApproval(prompt: Omit<ApprovalPrompt, "id">, review: () => Promise<void>): Promise<boolean> {
+	private requestApproval(prompt: Omit<ApprovalPrompt, "id">, review: () => Promise<void>): Promise<ApprovalDecision> {
 		this.reveal();
 		return new Promise((resolve) => {
 			const approval = {
@@ -290,11 +292,15 @@ export class EditApprovalController {
 			};
 			this._approvals.push(approval);
 			this.pendingApprovals.set(approval.id, { resolve, review });
-			this.post({ type: "approvalRequested", approval });
+			if (!this.post({ type: "approvalRequested", approval })) {
+				// The chat view is closed, so this approval can never be answered;
+				// treat it as cancelled instead of hanging the tool call forever.
+				this.resolveApproval(approval.id, "cancelled");
+			}
 		});
 	}
 
-	private resolveApproval(id: string, approved: boolean) {
+	private resolveApproval(id: string, decision: ApprovalDecision) {
 		const pending = this.pendingApprovals.get(id);
 		if (!pending) {
 			return;
@@ -306,13 +312,13 @@ export class EditApprovalController {
 			this._approvals.splice(approvalIndex, 1);
 		}
 		this.post({ type: "approvalResolved", id });
-		pending.resolve(approved);
+		pending.resolve(decision);
 	}
 
-	private resolvePendingApprovals(approved: boolean) {
+	private resolvePendingApprovals(decision: ApprovalDecision) {
 		const ids = [...this.pendingApprovals.keys()];
 		for (const id of ids) {
-			this.resolveApproval(id, approved);
+			this.resolveApproval(id, decision);
 		}
 	}
 }

@@ -1,10 +1,12 @@
+export type ApprovalDecision = "approved" | "rejected" | "cancelled";
+
 export interface VsCodeToolOptions {
 	cwd: string;
-	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<boolean>;
-	confirmWriteFile: (request: WriteFileRequest) => Promise<boolean>;
-	confirmDeleteFile: (request: DeleteFileRequest) => Promise<boolean>;
-	confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<boolean>;
-	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<boolean>;
+	confirmApplyEdits: (request: ApplyEditsRequest) => Promise<ApprovalDecision>;
+	confirmWriteFile: (request: WriteFileRequest) => Promise<ApprovalDecision>;
+	confirmDeleteFile: (request: DeleteFileRequest) => Promise<ApprovalDecision>;
+	confirmDeleteDirectory: (request: DeleteDirectoryRequest) => Promise<ApprovalDecision>;
+	confirmRenameSymbol: (request: RenameSymbolRequest) => Promise<ApprovalDecision>;
 }
 
 export interface ApplyEditReviewFile {

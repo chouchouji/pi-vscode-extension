@@ -3,7 +3,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
+import { approvalErrorResult, errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 const MAX_REVIEW_ENTRIES = 200;
@@ -120,14 +120,14 @@ export function createDeleteDirectoryToolDefinition(options: VsCodeToolOptions):
 				return errorResult(scan, "delete directory");
 			}
 
-			const approved = await options.confirmDeleteDirectory({
+			const decision = await options.confirmDeleteDirectory({
 				directoryPath: uri.fsPath,
 				entryCount: scan.entryCount,
 				truncated: scan.truncated,
 				samplePaths: scan.samplePaths,
 			});
-			if (!approved) {
-				return errorResult("User rejected the directory deletion.", "delete directory");
+			if (decision !== "approved") {
+				return approvalErrorResult(decision, "User rejected the directory deletion.", "delete directory");
 			}
 
 			const latestScan = await scanDirectory(uri);

@@ -3,7 +3,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
 import { planFileEdits } from "./edit-planning.ts";
-import { errorResult, textResult, toWorkspacePath } from "./shared.ts";
+import { approvalErrorResult, errorResult, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 export function createApplyEditsToolDefinition(options: VsCodeToolOptions): ToolDefinition {
@@ -35,14 +35,14 @@ export function createApplyEditsToolDefinition(options: VsCodeToolOptions): Tool
 				return errorResult(planned, "apply edits");
 			}
 
-			const approved = await options.confirmApplyEdits({
+			const decision = await options.confirmApplyEdits({
 				files: planned.map((plan) => ({
 					filePath: plan.uri.fsPath,
 					proposedText: plan.proposedText,
 				})),
 			});
-			if (!approved) {
-				return errorResult("User rejected the edits.", "apply edits");
+			if (decision !== "approved") {
+				return approvalErrorResult(decision, "User rejected the edits.", "apply edits");
 			}
 
 			const changedFiles = planned

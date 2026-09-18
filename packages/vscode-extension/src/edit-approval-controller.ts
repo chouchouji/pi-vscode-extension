@@ -25,15 +25,15 @@ interface PendingApproval {
 interface EditApprovalControllerOptions {
 	globalStorageUri: vscode.Uri;
 	reveal: () => void;
-	// Returns false when the chat view is closed and the message went nowhere.
-	post: (message: HostToWebviewMessage) => boolean;
+	// Resolves false when the chat view is closed or the message was not delivered.
+	post: (message: HostToWebviewMessage) => Promise<boolean>;
 }
 
 export class EditApprovalController {
 	private readonly pendingApprovals = new Map<string, PendingApproval>();
 	private readonly globalStorageUri: vscode.Uri;
 	private readonly reveal: () => void;
-	private readonly post: (message: HostToWebviewMessage) => boolean;
+	private readonly post: (message: HostToWebviewMessage) => Promise<boolean>;
 	private readonly _approvals: ApprovalPrompt[] = [];
 	private _approvalMode: ApprovalMode = "ask";
 
@@ -292,11 +292,14 @@ export class EditApprovalController {
 			};
 			this._approvals.push(approval);
 			this.pendingApprovals.set(approval.id, { resolve, review });
-			if (!this.post({ type: "approvalRequested", approval })) {
-				// The chat view is closed, so this approval can never be answered;
-				// treat it as cancelled instead of hanging the tool call forever.
-				this.resolveApproval(approval.id, "cancelled");
-			}
+			void this.post({ type: "approvalRequested", approval }).then(
+				(delivered) => {
+					if (!delivered) {
+						this.resolveApproval(approval.id, "cancelled");
+					}
+				},
+				() => this.resolveApproval(approval.id, "cancelled"),
+			);
 		});
 	}
 

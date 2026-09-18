@@ -309,7 +309,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 				this.postState();
 				break;
 			case "send":
-				await this.sendPrompt(message.params.text, message.params.streamingBehavior);
+				// A prompt may spend a long time initializing MCP/extensions before its
+				// preflight completes. Acknowledge the Webview request immediately and
+				// report setup failures through the chat event stream.
+				void this.sendPrompt(message.params.text, message.params.streamingBehavior).catch((error: unknown) =>
+					this.appendErrorMessage(error),
+				);
 				break;
 			case "stop":
 				this.approvalController.rejectPendingApprovals();
@@ -426,23 +431,11 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 
-		let service: PiAgentService;
-		let expanded: string;
-		try {
-			service = await this.ensureService();
-			expanded = await this.expandFileMentions(trimmed);
-		} catch (error) {
-			this.appendErrorMessage(error);
-			throw error;
-		}
+		const service = await this.ensureService();
+		const expanded = await this.expandFileMentions(trimmed);
 
-		await new Promise<void>((resolve, reject) => {
-			void service
-				.prompt(expanded, streamingBehavior, (success) =>
-					success ? resolve() : reject(new Error("Prompt was rejected before sending.")),
-				)
-				.then(() => this.refreshSessions());
-		});
+		await service.prompt(expanded, streamingBehavior);
+		await this.refreshSessions();
 	}
 
 	// Expand "@path" mentions into file contents before the prompt reaches the
@@ -593,24 +586,23 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post(this.state.createStateMessage(this.approvalController.approvalMode, this.approvalController.approvals));
 	}
 
-	private post(message: HostToWebviewMessage): boolean {
+	private async post(message: HostToWebviewMessage): Promise<boolean> {
 		if (!this.view) {
 			return false;
 		}
 		const event: HostToWebviewEventEnvelope = { kind: "event", event: message };
-		void this.view.webview.postMessage(event).then(
-			(delivered) => {
-				if (!delivered) {
-					console.warn(`Pi chat: failed to deliver "${message.type}" event to the webview.`);
-				}
-			},
-			(error: unknown) => {
-				console.warn(
-					`Pi chat: failed to deliver "${message.type}" event to the webview: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			},
-		);
-		return true;
+		try {
+			const delivered = await this.view.webview.postMessage(event);
+			if (!delivered) {
+				console.warn(`Pi chat: failed to deliver "${message.type}" event to the webview.`);
+			}
+			return delivered;
+		} catch (error) {
+			console.warn(
+				`Pi chat: failed to deliver "${message.type}" event to the webview: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return false;
+		}
 	}
 
 	private respond(response: WebviewResponseEnvelope) {

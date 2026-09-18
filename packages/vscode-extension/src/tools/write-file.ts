@@ -3,7 +3,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as vscode from "vscode";
-import { errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
+import { approvalErrorResult, errorResult, resolveFileUri, textResult, toWorkspacePath } from "./shared.ts";
 import type { VsCodeToolOptions } from "./types.ts";
 
 interface ExistingFileText {
@@ -65,13 +65,13 @@ export function createWriteFileToolDefinition(options: VsCodeToolOptions): ToolD
 				);
 			}
 
-			const approved = await options.confirmWriteFile({
+			const decision = await options.confirmWriteFile({
 				filePath: uri.fsPath,
 				content: params.content,
 				overwrite: exists,
 			});
-			if (!approved) {
-				return errorResult("User rejected the file write.", "write file");
+			if (decision !== "approved") {
+				return approvalErrorResult(decision, "User rejected the file write.", "write file");
 			}
 
 			const latest = await readExistingFileText(uri);

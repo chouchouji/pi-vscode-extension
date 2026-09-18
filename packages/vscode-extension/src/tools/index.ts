@@ -10,6 +10,7 @@ export { createSelectionToolDefinition } from "./selection.ts";
 export type {
 	ApplyEditReviewFile,
 	ApplyEditsRequest,
+	ApprovalDecision,
 	DeleteDirectoryRequest,
 	DeleteFileRequest,
 	RenameSymbolRequest,

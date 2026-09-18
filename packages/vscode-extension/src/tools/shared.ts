@@ -2,6 +2,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import { clamp } from "rattail";
 import * as vscode from "vscode";
+import type { ApprovalDecision } from "./types.ts";
 
 interface ToolDetails {
 	title: string;
@@ -16,6 +17,17 @@ export function textResult(text: string, title: string): AgentToolResult<ToolDet
 
 export function errorResult(text: string, title: string): AgentToolResult<ToolDetails> {
 	return textResult(`Error: ${text}`, title);
+}
+
+export function approvalErrorResult(
+	decision: ApprovalDecision,
+	rejectedText: string,
+	title: string,
+): AgentToolResult<ToolDetails> {
+	return errorResult(
+		decision === "cancelled" ? "Approval was cancelled (chat view closed or session aborted)." : rejectedText,
+		title,
+	);
 }
 
 export function getActiveEditor(): vscode.TextEditor | undefined {

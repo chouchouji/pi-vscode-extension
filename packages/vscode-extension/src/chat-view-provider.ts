@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import * as vscode from "vscode";
+import { createId } from "./agent-service/chat-message-format.ts";
 import { runLoginFlow, runLogoutFlow } from "./auth-flow.ts";
 import { PiChatViewState } from "./chat-view-state.ts";
 import { EditApprovalController } from "./edit-approval-controller.ts";
@@ -73,6 +74,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			enableScripts: true,
 			localResourceRoots: [this.extensionUri],
 		};
+		webviewView.onDidDispose(() => {
+			if (this.view === webviewView) {
+				this.view = undefined;
+			}
+			this.approvalController.rejectPendingApprovals();
+		});
 		webviewView.webview.onDidReceiveMessage((message) => {
 			const parsed = parseWebviewMessage(message);
 			if (parsed) {
@@ -108,7 +115,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			this.view.show(true);
 			return;
 		}
-		void vscode.commands.executeCommand("workbench.view.extension.pi");
+		void vscode.commands.executeCommand("workbench.view.extension.pi").then(undefined, () => {});
 	}
 
 	async newChat() {
@@ -285,6 +292,17 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post(this.state.applyServiceEvent(event));
 	}
 
+	private appendErrorMessage(error: unknown) {
+		this.handleServiceEvent({
+			type: "append",
+			message: {
+				id: createId("error"),
+				role: "error",
+				text: error instanceof Error ? error.message : String(error),
+			},
+		});
+	}
+
 	private async handleWebviewMessage(message: WebviewToHostMessage): Promise<unknown> {
 		switch (message.method) {
 			case "ready":
@@ -298,10 +316,12 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 				await this.service?.abort();
 				return this.service?.clearMessageQueue();
 			case "new":
-				await this.newChat();
+				// Session creation can block on MCP/extension init; respond now and
+				// report failures in the chat instead of hitting the webview timeout.
+				void this.newChat().catch((error: unknown) => this.appendErrorMessage(error));
 				break;
 			case "selectModel":
-				await this.selectModel();
+				await this.selectModel().catch((error: unknown) => this.appendErrorMessage(error));
 				break;
 			case "switchSession":
 				await this.switchSession(message.params.path);
@@ -318,7 +338,7 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			case "setPermissionMode":
 				this.approvalController.rejectPendingApprovals();
 				this.state.setPermissionMode(message.params.permissionMode);
-				this.service?.setPermissionMode(message.params.permissionMode);
+				await this.service?.setPermissionMode(message.params.permissionMode);
 				this.postState();
 				break;
 			case "setApprovalMode":
@@ -332,7 +352,9 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 				await this.approvalController.handleApprovalBatchResponse(message.params.action);
 				break;
 			case "openFile":
-				await this.openFileReference(message.params.path, message.params.line, message.params.character);
+				await this.openFileReference(message.params.path, message.params.line, message.params.character).catch(
+					(error: unknown) => this.appendErrorMessage(error),
+				);
 				break;
 		}
 	}
@@ -404,9 +426,23 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 			return;
 		}
 
-		const service = await this.ensureService();
-		await service.prompt(await this.expandFileMentions(trimmed), streamingBehavior);
-		await this.refreshSessions();
+		let service: PiAgentService;
+		let expanded: string;
+		try {
+			service = await this.ensureService();
+			expanded = await this.expandFileMentions(trimmed);
+		} catch (error) {
+			this.appendErrorMessage(error);
+			throw error;
+		}
+
+		await new Promise<void>((resolve, reject) => {
+			void service
+				.prompt(expanded, streamingBehavior, (success) =>
+					success ? resolve() : reject(new Error("Prompt was rejected before sending.")),
+				)
+				.then(() => this.refreshSessions());
+		});
 	}
 
 	// Expand "@path" mentions into file contents before the prompt reaches the
@@ -517,21 +553,27 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private async refreshSessions() {
-		let sessions: SessionSummary[];
-		let activeSessionPath: string | undefined;
-		if (this.service) {
-			sessions = await this.service.listSessions();
-			activeSessionPath = this.service.getActiveSessionPath();
-		} else {
-			activeSessionPath = undefined;
-			sessions = await listSessionSummaries({
-				cwd: getWorkspaceCwd(),
-				agentDir: this.readAgentDir(),
-				activeSessionPath,
-			});
+		try {
+			let sessions: SessionSummary[];
+			let activeSessionPath: string | undefined;
+			if (this.service) {
+				sessions = await this.service.listSessions();
+				activeSessionPath = this.service.getActiveSessionPath();
+			} else {
+				activeSessionPath = undefined;
+				sessions = await listSessionSummaries({
+					cwd: getWorkspaceCwd(),
+					agentDir: this.readAgentDir(),
+					activeSessionPath,
+				});
+			}
+			this.state.setSessions(sessions, activeSessionPath);
+			this.post(this.state.createSessionsEvent());
+		} catch (error) {
+			await vscode.window.showErrorMessage(
+				`Failed to load Pi sessions: ${error instanceof Error ? error.message : String(error)}`,
+			);
 		}
-		this.state.setSessions(sessions, activeSessionPath);
-		this.post(this.state.createSessionsEvent());
 	}
 
 	private async refreshModelStatus() {
@@ -551,12 +593,41 @@ export class PiChatViewProvider implements vscode.WebviewViewProvider {
 		this.post(this.state.createStateMessage(this.approvalController.approvalMode, this.approvalController.approvals));
 	}
 
-	private post(message: HostToWebviewMessage) {
+	private post(message: HostToWebviewMessage): boolean {
+		if (!this.view) {
+			return false;
+		}
 		const event: HostToWebviewEventEnvelope = { kind: "event", event: message };
-		void this.view?.webview.postMessage(event);
+		void this.view.webview.postMessage(event).then(
+			(delivered) => {
+				if (!delivered) {
+					console.warn(`Pi chat: failed to deliver "${message.type}" event to the webview.`);
+				}
+			},
+			(error: unknown) => {
+				console.warn(
+					`Pi chat: failed to deliver "${message.type}" event to the webview: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			},
+		);
+		return true;
 	}
 
 	private respond(response: WebviewResponseEnvelope) {
-		void this.view?.webview.postMessage(response);
+		if (!this.view) {
+			return;
+		}
+		void this.view.webview.postMessage(response).then(
+			(delivered) => {
+				if (!delivered) {
+					console.warn(`Pi chat: failed to deliver response "${response.id}" to the webview.`);
+				}
+			},
+			(error: unknown) => {
+				console.warn(
+					`Pi chat: failed to deliver response "${response.id}" to the webview: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			},
+		);
 	}
 }

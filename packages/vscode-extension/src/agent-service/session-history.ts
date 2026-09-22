@@ -87,6 +87,8 @@ export function chatMessagesFromEntries(entries: SessionEntry[]): ChatMessage[] 
 					role: message.errorMessage ? "error" : "assistant",
 					text: message.errorMessage ?? contentToText(message.content),
 					timestamp,
+					startedAt: message.timestamp,
+					outputTokens: message.usage.output,
 				});
 				break;
 			case "toolResult": {

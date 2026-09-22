@@ -1,11 +1,11 @@
 export function getWebviewScript(
-	highlighterScriptUri: string,
-	mermaidScriptUri: string,
-	scriptNonce: string,
-	styleNonce: string,
-	avatarUri: string,
+  highlighterScriptUri: string,
+  mermaidScriptUri: string,
+  scriptNonce: string,
+  styleNonce: string,
+  avatarUri: string,
 ): string {
-	return `			const vscode = acquireVsCodeApi();
+  return `			const vscode = acquireVsCodeApi();
 		const assistantAvatarUri = ${JSON.stringify(avatarUri)};
 		let nextRequestId = 0;
 		const requestTimeoutMs = 60000;
@@ -1275,6 +1275,45 @@ export function getWebviewScript(
 			return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 		}
 
+		const tokenIconSvg =
+			'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="m12 21.423l-8.5-4.711V7.289L12 2.577l8.5 4.712v9.423zM9.196 9.866q.517-.639 1.248-1.002T12 8.5t1.556.364t1.248 1.001l4.115-2.29L12 3.723L5.08 7.575zm2.304 10.13v-4.505q-1.292-.235-2.146-1.214T8.5 12q0-.333.054-.628t.167-.603L4.5 8.404v7.71zm2.278-6.218q.722-.722.722-1.778t-.722-1.778T12 9.5t-1.778.722T9.5 12t.722 1.778T12 14.5t1.778-.722M12.5 19.996l7-3.882v-7.71l-4.221 2.365q.113.308.167.603T15.5 12q0 1.298-.854 2.277T12.5 15.491z"/></svg>';
+		const timeIconSvg =
+			'<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2M12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8s8 3.58 8 8s-3.58 8-8 8"/><path d="M12.5 7H11v6l5.25 3.15l.75-1.23l-4.5-2.67z"/></svg>';
+
+		function formatMessageDuration(ms) {
+			const totalSeconds = Math.max(1, Math.round(ms / 1000));
+			const hours = Math.floor(totalSeconds / 3600);
+			const minutes = Math.floor((totalSeconds % 3600) / 60);
+			const seconds = totalSeconds % 60;
+			let result = "";
+			if (hours > 0) {
+				result += hours + "h";
+			}
+			if (minutes > 0) {
+				result += minutes + "m";
+			}
+			if (seconds > 0 || result === "") {
+				result += seconds + "s";
+			}
+			return result;
+		}
+
+		function formatTokenCount(tokens) {
+			const units = [[1e12, "T"], [1e6, "M"], [1e3, "K"]];
+			for (let i = 0; i < units.length; i++) {
+				const scale = units[i][0];
+				const suffix = units[i][1];
+				if (tokens >= scale) {
+					const rounded = Math.round((tokens / scale) * 100) / 100;
+					if (rounded >= 1000 && i > 0) {
+						return (tokens / units[i - 1][0]).toFixed(2) + units[i - 1][1];
+					}
+					return rounded.toFixed(2) + suffix;
+				}
+			}
+			return tokens.toFixed(2);
+		}
+
 		function formatSessionTime(timestamp) {
 			const date = new Date(timestamp);
 			const pad = (value) => String(value).padStart(2, "0");
@@ -1415,10 +1454,31 @@ export function getWebviewScript(
 					appendMarkdown(el, displayText, Boolean(message.working));
 				}
 				if (message.role === "assistant" && !message.working && message.timestamp) {
+					const footer = document.createElement("div");
+					footer.className = "message-footer";
+					const meta = document.createElement("div");
+					meta.className = "message-footer-meta";
+					const duration = document.createElement("div");
+					duration.className = "message-duration";
+					if (message.startedAt && message.timestamp >= message.startedAt) {
+						duration.innerHTML = timeIconSvg;
+						duration.appendChild(document.createTextNode(formatMessageDuration(message.timestamp - message.startedAt)));
+					}
+					const usage = document.createElement("div");
+					usage.className = "message-usage";
+					if (typeof message.outputTokens === "number" && message.outputTokens > 0) {
+						usage.innerHTML = tokenIconSvg;
+						usage.appendChild(document.createTextNode(formatTokenCount(message.outputTokens)));
+					}
+					meta.appendChild(duration);
+					meta.appendChild(usage);
 					const time = document.createElement("div");
 					time.className = "message-time";
-					time.textContent = formatMessageTime(message.timestamp);
-					el.appendChild(time);
+					time.innerHTML = timeIconSvg;
+					time.appendChild(document.createTextNode(formatMessageTime(message.timestamp)));
+					footer.appendChild(meta);
+					footer.appendChild(time);
+					el.appendChild(footer);
 				}
 			}
 			updateEmptyState();
@@ -2127,6 +2187,8 @@ export function getWebviewScript(
 					working: message.working,
 					tool: message.tool,
 					timestamp: message.timestamp ?? existing?.timestamp,
+					startedAt: existing?.startedAt ?? existing?.timestamp,
+					outputTokens: message.outputTokens ?? existing?.outputTokens,
 				};
 				messageData.set(replacedMessage.id, replacedMessage);
 				scheduleRender(replacedMessage.id);

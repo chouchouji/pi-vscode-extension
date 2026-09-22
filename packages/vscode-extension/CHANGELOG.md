@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a footer to assistant messages in chat: response duration and output token count (with icons) on the left, message time on the right. Duration and token count are also shown for messages restored from session history.
+
 ## [0.0.8] - 2026-09-15
 
 ### Fixed

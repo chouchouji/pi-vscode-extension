@@ -84,6 +84,7 @@ export class AgentSessionEventMapper {
 						text,
 						working: false,
 						timestamp: event.message.timestamp,
+						outputTokens: event.message.usage.output,
 					});
 					this.assistantMessageId = undefined;
 				}

@@ -82,6 +82,9 @@ export class PiChatViewState {
 					message.text = event.text;
 					message.working = event.working;
 					message.tool = event.tool;
+					if (event.outputTokens !== undefined) {
+						message.outputTokens = event.outputTokens;
+					}
 				}
 				break;
 			}

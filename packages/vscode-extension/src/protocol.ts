@@ -19,6 +19,8 @@ export interface ChatMessage {
 	working?: boolean;
 	tool?: ToolMessage;
 	timestamp?: number;
+	startedAt?: number;
+	outputTokens?: number;
 }
 
 export type ApprovalAction = "review" | "apply" | "reject";
@@ -77,6 +79,7 @@ export type HostToWebviewMessage =
 			working?: boolean;
 			tool?: ToolMessage;
 			timestamp?: number;
+			outputTokens?: number;
 	  }
 	| { type: "running"; running: boolean }
 	| { type: "queueUpdate"; steering: string[]; followUp: string[] }

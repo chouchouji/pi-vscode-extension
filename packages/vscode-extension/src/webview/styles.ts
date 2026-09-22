@@ -1,5 +1,5 @@
 export function getWebviewStyles(): string {
-	return `		body {
+  return `		body {
 			padding: 0;
 			margin: 0;
 			color: var(--vscode-foreground);
@@ -200,13 +200,66 @@ export function getWebviewStyles(): string {
 			font-size: 12px;
 			font-weight: 600;
 		}
-		.message-time {
-			text-align: right;
-			font-size: 10px;
-			line-height: 1;
+		.message-footer {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			gap: 8px;
 			margin-top: 6px;
+		}
+		@media (max-width: 230px) {
+			.message-footer {
+				flex-direction: column;
+				align-items: start;
+			}
+		}
+		.message-footer-meta {
+			display: flex;
+			flex-direction: row;
+			align-items: center;
+		}
+		.message-duration {
+			display: flex;
+			align-items: center;
+			font-size: 12px;
+			line-height: 1;
+			margin-right: 10px;
 			color: var(--vscode-descriptionForeground);
 			opacity: 0.8;
+		}
+		.message-usage {
+			display: flex;
+			align-items: center;
+			font-size: 12px;
+			line-height: 1;
+			color: var(--vscode-descriptionForeground);
+			opacity: 0.8;
+		}
+		.message-duration svg {
+			width: 12px;
+			height: 12px;
+			vertical-align: -1.5px;
+			margin-right: 3px;
+		}
+		.message-usage svg {
+			width: 12px;
+			height: 12px;
+			margin-right: 3px;
+		}
+		.message-time {
+			display: flex;
+			align-items: center;
+			justify-content: flex-end;
+			text-align: right;
+			font-size: 12px;
+			line-height: 1;
+			color: var(--vscode-descriptionForeground);
+			opacity: 0.8;
+		}
+		.message-time svg {
+			width: 12px;
+			height: 12px;
+			margin-right: 3px;
 		}
 		.session-time {
 			text-align: right;

@@ -11,6 +11,7 @@ export type PiAgentServiceEvent =
 			working?: boolean;
 			tool?: ToolMessage;
 			timestamp?: number;
+			outputTokens?: number;
 	  }
 	| { type: "running"; running: boolean }
 	| { type: "queueUpdate"; steering: string[]; followUp: string[] }
